@@ -1,0 +1,16 @@
+{
+	"name": "outbound-click-tracking-dev",
+	"private": true,
+	"description": "Dev environment for the outbound-click-tracking WordPress plugin. Only outbound-click-tracking/ is ever deployed.",
+	"devDependencies": {
+		"@wordpress/env": "^10.0.0"
+	},
+	"scripts": {
+		"start": "wp-env start",
+		"stop": "wp-env stop",
+		"destroy": "wp-env destroy",
+		"cli": "wp-env run cli wp",
+		"test:install": "docker run --rm -v \"$PWD/tests\":/app -w /app composer:2 install",
+		"test": "wp-env run tests-cli --env-cwd=octk-tests vendor/bin/phpunit"
+	}
+}

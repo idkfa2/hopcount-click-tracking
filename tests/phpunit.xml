@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<phpunit
+	bootstrap="bootstrap.php"
+	backupGlobals="false"
+	colors="true"
+	beStrictAboutTestsThatDoNotTestAnything="true"
+>
+	<testsuites>
+		<testsuite name="octk">
+			<directory prefix="test-" suffix=".php">.</directory>
+		</testsuite>
+	</testsuites>
+</phpunit>

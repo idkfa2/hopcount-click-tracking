@@ -1,0 +1,19 @@
+# Site-specific ops material (deploy notes, mirrors, reviews) is never committed.
+local/
+CLAUDE.local.md
+*.zip
+*.gz
+*.tar.gz
+*.sql
+*.sql.gz
+
+# Tooling
+build/
+node_modules/
+tests/vendor/
+tests/composer.lock
+tests/.phpunit.result.cache
+.wp-env.override.json
+*.log
+ui-screenshots/
+.DS_Store

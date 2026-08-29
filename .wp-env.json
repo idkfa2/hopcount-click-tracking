@@ -1,0 +1,17 @@
+{
+	"core": "https://wordpress.org/wordpress-7.1.zip",
+	"phpVersion": "8.4",
+	"plugins": [
+		"./outbound-click-tracking",
+		"https://downloads.wordpress.org/plugin/shortcoder.zip",
+		"https://downloads.wordpress.org/plugin/plugin-check.zip"
+	],
+	"mappings": {
+		"octk-tests": "./tests"
+	},
+	"config": {
+		"WP_DEBUG": true,
+		"WP_DEBUG_LOG": true,
+		"WP_DEBUG_DISPLAY": false
+	}
+}
