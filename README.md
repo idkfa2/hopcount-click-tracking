@@ -47,25 +47,31 @@ Most link-tracking plugins are redirectors: every click goes through your server
 | Per-click storage | None, hourly aggregates only | One row per click, often with IP and user agent |
 | Personal data | None | Usually IP, user agent, referrer |
 | Cost on cached page views | Zero PHP, zero queries | Redirect hits PHP on every click |
-| Middle-click / keyboard activation | Counted | Depends |
 | Frontend payload | About 700 bytes gzipped | Varies |
+| Affiliate programme terms | Real destination in the link | Cloaked links are disallowed by some programmes |
 
 There is nothing to anonymise and nothing to add to a privacy policy beyond "aggregate click counts are kept".
 
+The plugin has been submitted to the WordPress.org plugin directory and is awaiting review; until it is listed, install it from the [release zip](#installation).
+
 ## Screenshots
 
-| Report | Dashboard widget |
-|---|---|
-| ![Report screen](wp-org-assets/screenshot-1.png) | ![Dashboard widget](wp-org-assets/screenshot-5.png) |
+**Report**: date range, host filter, search, summary cards and the sortable link table.
 
-| Labels | Settings | Status |
-|---|---|---|
-| ![Labels](wp-org-assets/screenshot-2.png) | ![Settings](wp-org-assets/screenshot-3.png) | ![Status](wp-org-assets/screenshot-4.png) |
+![Report screen](wp-org-assets/screenshot-1.png)
+
+| Labels | Settings |
+|---|---|
+| ![Labels](wp-org-assets/screenshot-2.png) | ![Settings](wp-org-assets/screenshot-3.png) |
+
+| Status | Dashboard widget |
+|---|---|
+| ![Status](wp-org-assets/screenshot-4.png) | <img src="wp-org-assets/screenshot-5.png" alt="Dashboard widget" width="420"> |
 
 ## How it works
 
 1. **Annotate at render time.** When a single post or page renders, a content filter (priority 50, filterable) adds a server-generated `data-octk-token` to every eligible outbound link. Links to your own site (and any hosts you list as internal) are skipped. Classic editor, Gutenberg, custom HTML and shortcode-emitted links are all covered. Failures never break rendering.
-2. **Beacon on activation.** A small deferred listener (about 700 bytes gzipped) watches for click, auxclick and keyboard activation and sends `navigator.sendBeacon` (fetch keepalive fallback) to `POST /wp-json/octk/v1/click`.
+2. **Beacon on activation.** A small deferred listener (about 700 bytes gzipped) watches for click and auxclick (keyboard activation of a link fires a native click event, so it is covered too) and sends `navigator.sendBeacon` (fetch keepalive fallback) to `POST /wp-json/octk/v1/click`.
 3. **Count.** The endpoint resolves the token and atomically increments an hourly aggregate. Unknown or malformed tokens are rejected cheaply, and nothing on the public side can write link metadata.
 
 Because tokens live in the rendered HTML, cached pages keep tracking without touching the database. WP Rocket, WP Super Cache, W3 Total Cache, Cloudflare APO and similar all work with no special configuration.
