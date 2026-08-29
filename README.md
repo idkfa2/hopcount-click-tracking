@@ -151,11 +151,17 @@ No IP addresses, user agents, referrers, user IDs or cookies are stored. The opt
 
 ## Abuse protection
 
-The endpoint is public by design (it has to work from cached pages). Layers:
+The endpoint is public by design (it has to work from cached pages), so anyone can POST to it. The worst a flood can do is inflate counts for links whose tokens the attacker has seen; nothing is stored per request and unknown tokens are rejected with a cheap 4xx. Still, put a limit in front of it. Layers, outermost first:
 
-1. Recommended: a rate-limiting rule at your CDN or WAF on `POST /wp-json/octk/v1/click`.
-2. Optional built-in per-IP limiter (Settings), fail-open.
-3. Token syntax validation, POST-only, master switch, cheap 4xx for unknown tokens, bounded counters.
+1. **Rate limit at the edge (recommended).** The built-in limiter is off by default and fails open, so an edge rule is the primary defence.
+   - **Cloudflare (free plan includes one rate-limiting rule):** Security > WAF > Rate limiting rules > Create rule. Expression: `URI Path equals /wp-json/octk/v1/click` and `Request Method equals POST`. Characteristic: IP. Rate: 10 requests per 10 seconds. Action: Block for 10 seconds. Real visitors never get near that; a script does within a second.
+   - **Other CDNs and WAFs** (Fastly, Bunny, Sucuri, hosting-provider firewalls): the same rule expressed in their terms - match the path and method, key on client IP, block or challenge above roughly 1 request per second.
+2. **No CDN? Limit at the web server.** Any server can do this without extra plugins:
+   - **nginx:** in the `http` block `limit_req_zone $binary_remote_addr zone=octk:1m rate=1r/s;` then inside the server block `location = /wp-json/octk/v1/click { limit_req zone=octk burst=10 nodelay; try_files $uri /index.php?$args; }`.
+   - **Apache:** `mod_ratelimit` cannot count requests, so use `mod_evasive` or `mod_security` with a rule on that path, or ask your host to add one.
+   - **Managed hosts** (Kinsta, WP Engine, SiteGround, Cloudways and similar) usually expose a per-path rate limit or a firewall rule in their control panel; the numbers above apply.
+3. **Built-in per-IP limiter** (Settings > Rate limiting): a fixed window on your persistent object cache, 60 clicks per minute per IP by default. Use it as a second layer when you have Redis or Memcached; it fails open when the cache is unavailable, which is why it is not the first line.
+4. **Always on:** token syntax validation, POST-only, cheap 4xx for unknown tokens, master switch (403s every beacon, including from cached pages), bounded counters, and no writes to link metadata from the public side.
 
 ## FAQ
 
