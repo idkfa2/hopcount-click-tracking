@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.0 - 2026-09-03
+
+- Renamed to **Hopcount Click Tracking**: slug and text domain `hopcount-click-tracking`, main file `hopcount-click-tracking/hopcount-click-tracking.php`. The code prefix `octk_`, all hooks, table names, options, the REST route and the link attribute are unchanged, so existing data and site code carry over. Upgrading is a folder swap: deactivate the `outbound-click-tracking` folder, upload `hopcount-click-tracking`, activate.
+- Source repository is now https://github.com/idkfa2/hopcount-click-tracking; `Plugin URI` updated.
+
 ## 1.0.1 - 2026-08-29
 
 - Legacy adoption hardening: option and user-meta copies are verified before the legacy sources are deleted, the cron clear is checked, and `octk_schema_version` 2 is recorded only after the migrated tables pass the v2 probe (a malformed overrides table refuses adoption; an absent one lands at version 1 and migration 2 builds it).

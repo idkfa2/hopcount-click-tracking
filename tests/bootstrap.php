@@ -16,7 +16,7 @@ if ( ! $_tests_dir ) {
 require_once $_tests_dir . '/includes/functions.php';
 
 tests_add_filter( 'muplugins_loaded', static function () {
-	require WP_PLUGIN_DIR . '/outbound-click-tracking/outbound-click-tracking.php';
+	require WP_PLUGIN_DIR . '/hopcount-click-tracking/hopcount-click-tracking.php';
 
 	// Shortcoder is an integration-fixture dependency (scope §14).
 	$shortcoder = WP_PLUGIN_DIR . '/shortcoder/shortcoder.php';

@@ -57,19 +57,19 @@ function octk_handle_click( WP_REST_Request $request ) {
 
 	// 1. Master switch: cached pages keep beaconing after a disable.
 	if ( ! octk_enabled() ) {
-		return new WP_Error( 'octk_disabled', __( 'Tracking is disabled.', 'outbound-click-tracking' ), array( 'status' => 403 ) );
+		return new WP_Error( 'octk_disabled', __( 'Tracking is disabled.', 'hopcount-click-tracking' ), array( 'status' => 403 ) );
 	}
 
 	// 2. Token syntax was enforced by the args schema; defend anyway.
 	$token = $request->get_param( 'token' );
 	if ( ! octk_validate_token_arg( $token ) ) {
-		return new WP_Error( 'octk_bad_token', __( 'Invalid token.', 'outbound-click-tracking' ), array( 'status' => 400 ) );
+		return new WP_Error( 'octk_bad_token', __( 'Invalid token.', 'hopcount-click-tracking' ), array( 'status' => 400 ) );
 	}
 
 	// 3. Rate limiter: allow-all portable default; the built-in per-IP
 	// limiter or a site plugin hooks in here. Fails open by design (decision 29).
 	if ( ! (bool) apply_filters( 'octk_click_allowed', true, $token, $request ) ) {
-		return new WP_Error( 'octk_rate_limited', __( 'Too many requests.', 'outbound-click-tracking' ), array( 'status' => 429 ) );
+		return new WP_Error( 'octk_rate_limited', __( 'Too many requests.', 'hopcount-click-tracking' ), array( 'status' => 429 ) );
 	}
 
 	// 4. Unique-index lookup; every known token is eligible in v1.
@@ -78,7 +78,7 @@ function octk_handle_click( WP_REST_Request $request ) {
 		$wpdb->prepare( "SELECT id FROM {$links} WHERE public_token = UNHEX(%s)", $token )
 	);
 	if ( null === $link_id ) {
-		return new WP_Error( 'octk_unknown_token', __( 'Unknown token.', 'outbound-click-tracking' ), array( 'status' => 404 ) );
+		return new WP_Error( 'octk_unknown_token', __( 'Unknown token.', 'hopcount-click-tracking' ), array( 'status' => 404 ) );
 	}
 
 	// 5. Atomic increment of the current hourly UTC bucket.
@@ -92,7 +92,7 @@ function octk_handle_click( WP_REST_Request $request ) {
 	);
 	if ( false === $result ) {
 		octk_log( 'click increment failed: ' . $wpdb->last_error );
-		return new WP_Error( 'octk_storage_error', __( 'Unable to record click.', 'outbound-click-tracking' ), array( 'status' => 500 ) );
+		return new WP_Error( 'octk_storage_error', __( 'Unable to record click.', 'hopcount-click-tracking' ), array( 'status' => 500 ) );
 	}
 
 	return rest_ensure_response( array( 'recorded' => true ) );

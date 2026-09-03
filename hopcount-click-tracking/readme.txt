@@ -1,9 +1,9 @@
-=== Outbound Click Tracking ===
+=== Hopcount Click Tracking ===
 Contributors: aph5
 Tags: outbound links, affiliate, click tracking, analytics, privacy
 Requires at least: 6.5
 Tested up to: 7.1
-Stable tag: 1.0.1
+Stable tag: 1.1.0
 Requires PHP: 8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -12,7 +12,7 @@ Counts clicks on outbound and affiliate links without redirects, cookies, per-cl
 
 == Description ==
 
-Outbound Click Tracking records how often visitors click the outbound and affiliate links in your posts and pages, and shows the totals in wp-admin. It does this without redirecting or cloaking anything: your links keep their real destination URLs, which search engines and affiliate programme terms both prefer.
+Hopcount Click Tracking records how often visitors click the outbound and affiliate links in your posts and pages, and shows the totals in wp-admin. It does this without redirecting or cloaking anything: your links keep their real destination URLs, which search engines and affiliate programme terms both prefer.
 
 **What it stores**
 
@@ -49,7 +49,7 @@ Redirect or "cloaking" plugins route every click through your server and typical
 
 == Installation ==
 
-1. Upload the `outbound-click-tracking` folder to `/wp-content/plugins/`, or install it from the Plugins screen.
+1. Upload the `hopcount-click-tracking` folder to `/wp-content/plugins/`, or install it from the Plugins screen.
 2. Activate the plugin. The tables and the daily retention task are created on activation.
 3. Review **Click Tracking > Settings** (master switch, excluded roles, internal hosts, retention, rate limiting).
 4. If you run a page cache, purge it once so existing posts are annotated on their next render.
@@ -109,6 +109,9 @@ Data is kept by default. Tick the option on the Settings screen if you want the 
 
 == Changelog ==
 
+= 1.1.0 =
+* Renamed to Hopcount Click Tracking (slug and text domain `hopcount-click-tracking`). Code prefix, hooks, tables, options and the REST route are unchanged, so existing data and site code carry over.
+
 = 1.0.1 =
 * Legacy data adoption now verifies every copied option and user preference before removing the source, checks that the old cron hook was cleared, and records the schema version only after the migrated tables pass the structure probe.
 * Plugin URI points at the public GitHub repository.
@@ -132,6 +135,9 @@ Data is kept by default. Tick the option on the Settings screen if you want the 
 * Initial private releases: token annotation, beacon listener, REST endpoint, hourly aggregates, Report, Labels, Settings and Status screens, dashboard widget, retention, rate limiter, CSV export.
 
 == Upgrade Notice ==
+
+= 1.1.0 =
+Plugin folder renamed to hopcount-click-tracking. Deactivate the old folder, upload the new one, activate. Data and settings are preserved.
 
 = 1.0.1 =
 Hardening of the pre-1.0 data migration. No functional changes for fresh installs.

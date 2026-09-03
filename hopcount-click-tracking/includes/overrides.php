@@ -164,7 +164,7 @@ function octk_labels_page_url( array $params = array() ): string {
 add_action( 'admin_post_octk_save_label', 'octk_handle_save_label' );
 function octk_handle_save_label(): void {
 	if ( ! current_user_can( octk_label_capability() ) ) {
-		wp_die( esc_html__( 'Sorry, you are not allowed to access this page.', 'outbound-click-tracking' ), '', 403 );
+		wp_die( esc_html__( 'Sorry, you are not allowed to access this page.', 'hopcount-click-tracking' ), '', 403 );
 	}
 	check_admin_referer( 'octk_save_label' );
 
@@ -190,7 +190,7 @@ function octk_handle_save_label(): void {
 add_action( 'admin_post_octk_delete_label', 'octk_handle_delete_label' );
 function octk_handle_delete_label(): void {
 	if ( ! current_user_can( octk_label_capability() ) ) {
-		wp_die( esc_html__( 'Sorry, you are not allowed to access this page.', 'outbound-click-tracking' ), '', 403 );
+		wp_die( esc_html__( 'Sorry, you are not allowed to access this page.', 'hopcount-click-tracking' ), '', 403 );
 	}
 	check_admin_referer( 'octk_delete_label' );
 
@@ -204,28 +204,28 @@ function octk_handle_delete_label(): void {
 
 function octk_render_labels_page(): void {
 	if ( ! current_user_can( octk_label_capability() ) ) {
-		wp_die( esc_html__( 'Sorry, you are not allowed to access this page.', 'outbound-click-tracking' ) );
+		wp_die( esc_html__( 'Sorry, you are not allowed to access this page.', 'hopcount-click-tracking' ) );
 	}
 
 	octk_admin_styles();
-	echo '<div class="wrap"><h1>' . esc_html__( 'Link Labels', 'outbound-click-tracking' ) . '</h1>';
-	echo '<p>' . esc_html__( 'Labels name the affiliate product behind a destination URL. Automatic labels come from the link text in your articles; a manual label set here wins over the automatic one and applies to this exact URL on every page it appears.', 'outbound-click-tracking' ) . '</p>';
+	echo '<div class="wrap"><h1>' . esc_html__( 'Link Labels', 'hopcount-click-tracking' ) . '</h1>';
+	echo '<p>' . esc_html__( 'Labels name the affiliate product behind a destination URL. Automatic labels come from the link text in your articles; a manual label set here wins over the automatic one and applies to this exact URL on every page it appears.', 'hopcount-click-tracking' ) . '</p>';
 
 	if ( ! octk_schema_v2_ready() ) {
-		echo '<div class="notice notice-error"><p>' . esc_html__( 'The label tables are unavailable.', 'outbound-click-tracking' ) . ' ' . sprintf(
+		echo '<div class="notice notice-error"><p>' . esc_html__( 'The label tables are unavailable.', 'hopcount-click-tracking' ) . ' ' . sprintf(
 			/* translators: %s: link to the Status page (anchor text "Status page"). */
-			esc_html__( 'Visit the %s.', 'outbound-click-tracking' ),
-			'<a href="' . esc_url( admin_url( 'admin.php?page=octk-status' ) ) . '">' . esc_html__( 'Status page', 'outbound-click-tracking' ) . '</a>'
+			esc_html__( 'Visit the %s.', 'hopcount-click-tracking' ),
+			'<a href="' . esc_url( admin_url( 'admin.php?page=octk-status' ) ) . '">' . esc_html__( 'Status page', 'hopcount-click-tracking' ) . '</a>'
 		) . '</p></div></div>';
 		return;
 	}
 
 	$messages = array(
-		'saved'    => array( 'success', __( 'Label saved.', 'outbound-click-tracking' ) ),
-		'deleted'  => array( 'success', __( 'Label removed. The automatic label (if any) applies again.', 'outbound-click-tracking' ) ),
-		'empty'    => array( 'error', __( 'The label cannot be empty. To remove a manual label, use its Remove button below.', 'outbound-click-tracking' ) ),
-		'notfound' => array( 'error', __( 'That URL is not a tracked destination.', 'outbound-click-tracking' ) ),
-		'failed'   => array( 'error', __( 'Saving the label failed. Check the Status page.', 'outbound-click-tracking' ) ),
+		'saved'    => array( 'success', __( 'Label saved.', 'hopcount-click-tracking' ) ),
+		'deleted'  => array( 'success', __( 'Label removed. The automatic label (if any) applies again.', 'hopcount-click-tracking' ) ),
+		'empty'    => array( 'error', __( 'The label cannot be empty. To remove a manual label, use its Remove button below.', 'hopcount-click-tracking' ) ),
+		'notfound' => array( 'error', __( 'That URL is not a tracked destination.', 'hopcount-click-tracking' ) ),
+		'failed'   => array( 'error', __( 'Saving the label failed. Check the Status page.', 'hopcount-click-tracking' ) ),
 	);
 	$msg = sanitize_key( $_GET['octk_msg'] ?? '' ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- display-only notice selector.
 	if ( isset( $messages[ $msg ] ) ) {
@@ -238,37 +238,37 @@ function octk_render_labels_page(): void {
 	if ( '' !== $dest ) {
 		$canonical = octk_override_canonical_url( $dest );
 		if ( null === $canonical ) {
-			echo '<div class="notice notice-error"><p>' . esc_html__( 'That URL is not a tracked destination.', 'outbound-click-tracking' ) . '</p></div>';
+			echo '<div class="notice notice-error"><p>' . esc_html__( 'That URL is not a tracked destination.', 'hopcount-click-tracking' ) . '</p></div>';
 		} else {
 			octk_render_label_form( $canonical );
 		}
 	}
 
 	$rows = octk_override_list();
-	echo '<h2>' . esc_html__( 'Manual labels', 'outbound-click-tracking' ) . '</h2>';
+	echo '<h2>' . esc_html__( 'Manual labels', 'hopcount-click-tracking' ) . '</h2>';
 	if ( empty( $rows ) ) {
-		echo '<p>' . esc_html__( 'No manual labels yet.', 'outbound-click-tracking' ) . ' ' . sprintf(
+		echo '<p>' . esc_html__( 'No manual labels yet.', 'hopcount-click-tracking' ) . ' ' . sprintf(
 			/* translators: %s: link to the report page (anchor text "report"). */
-			esc_html__( 'Use the Rename action on a %s row to add one.', 'outbound-click-tracking' ),
-			'<a href="' . esc_url( admin_url( 'admin.php?page=octk-report' ) ) . '">' . esc_html__( 'report', 'outbound-click-tracking' ) . '</a>'
+			esc_html__( 'Use the Rename action on a %s row to add one.', 'hopcount-click-tracking' ),
+			'<a href="' . esc_url( admin_url( 'admin.php?page=octk-report' ) ) . '">' . esc_html__( 'report', 'hopcount-click-tracking' ) . '</a>'
 		) . '</p></div>';
 		return;
 	}
 
 	echo '<table class="widefat striped octk-table" style="max-width:1000px;">';
-	echo '<thead><tr><th scope="col">' . esc_html__( 'Label', 'outbound-click-tracking' ) . '</th><th scope="col">' . esc_html__( 'Destination', 'outbound-click-tracking' ) . '</th><th scope="col" style="width:220px;">' . esc_html__( 'Updated', 'outbound-click-tracking' ) . '</th><th scope="col" style="width:160px;">' . esc_html__( 'Actions', 'outbound-click-tracking' ) . '</th></tr></thead><tbody>';
+	echo '<thead><tr><th scope="col">' . esc_html__( 'Label', 'hopcount-click-tracking' ) . '</th><th scope="col">' . esc_html__( 'Destination', 'hopcount-click-tracking' ) . '</th><th scope="col" style="width:220px;">' . esc_html__( 'Updated', 'hopcount-click-tracking' ) . '</th><th scope="col" style="width:160px;">' . esc_html__( 'Actions', 'hopcount-click-tracking' ) . '</th></tr></thead><tbody>';
 	foreach ( $rows as $row ) {
 		$edit_url = octk_labels_page_url( array( 'dest' => rawurlencode( $row->destination_url ) ) );
 		echo '<tr>';
 		echo '<td><strong>' . esc_html( $row->label ) . '</strong></td>';
 		echo '<td><span class="octk-url">' . esc_html( $row->destination_url ) . '</span></td>';
 		echo '<td>' . esc_html( octk_format_bucket( $row->updated_at_utc ) ) . '</td>';
-		echo '<td><a class="button button-small" href="' . esc_url( $edit_url ) . '">' . esc_html__( 'Edit', 'outbound-click-tracking' ) . '</a> ';
+		echo '<td><a class="button button-small" href="' . esc_url( $edit_url ) . '">' . esc_html__( 'Edit', 'hopcount-click-tracking' ) . '</a> ';
 		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" style="display:inline;">';
 		wp_nonce_field( 'octk_delete_label' );
 		echo '<input type="hidden" name="action" value="octk_delete_label" />';
 		echo '<input type="hidden" name="dest" value="' . esc_attr( $row->destination_url ) . '" />';
-		submit_button( __( 'Remove', 'outbound-click-tracking' ), 'small delete', '', false );
+		submit_button( __( 'Remove', 'hopcount-click-tracking' ), 'small delete', '', false );
 		echo '</form></td></tr>';
 	}
 	echo '</tbody></table></div>';
@@ -290,15 +290,15 @@ function octk_render_label_form( string $canonical ): void {
 	}
 
 	echo '<div class="octk-card" style="max-width:760px;margin:16px 0;">';
-	echo '<h2 style="margin-top:0;">' . esc_html__( 'Rename destination', 'outbound-click-tracking' ) . '</h2>';
+	echo '<h2 style="margin-top:0;">' . esc_html__( 'Rename destination', 'hopcount-click-tracking' ) . '</h2>';
 	echo '<p class="octk-url">' . esc_html( $canonical ) . '</p>';
-	echo '<p class="description">' . esc_html__( 'Applies to this exact URL wherever it appears. URLs differing only by #fragment are treated as the same destination; different query parameters are separate destinations.', 'outbound-click-tracking' ) . '</p>';
+	echo '<p class="description">' . esc_html__( 'Applies to this exact URL wherever it appears. URLs differing only by #fragment are treated as the same destination; different query parameters are separate destinations.', 'hopcount-click-tracking' ) . '</p>';
 	echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
 	wp_nonce_field( 'octk_save_label' );
 	echo '<input type="hidden" name="action" value="octk_save_label" />';
 	echo '<input type="hidden" name="dest" value="' . esc_attr( $canonical ) . '" />';
-	printf( '<input type="text" name="label" value="%s" maxlength="%d" style="width:100%%;max-width:480px;" placeholder="%s" /> ', esc_attr( $current ), (int) OCTK_LABEL_MAX_CHARS, esc_attr__( 'e.g. NOW Foods Creatine (iHerb)', 'outbound-click-tracking' ) );
-	submit_button( __( 'Save label', 'outbound-click-tracking' ), 'primary', '', false );
-	echo ' <a class="button" href="' . esc_url( octk_labels_page_url() ) . '">' . esc_html__( 'Cancel', 'outbound-click-tracking' ) . '</a>';
+	printf( '<input type="text" name="label" value="%s" maxlength="%d" style="width:100%%;max-width:480px;" placeholder="%s" /> ', esc_attr( $current ), (int) OCTK_LABEL_MAX_CHARS, esc_attr__( 'e.g. NOW Foods Creatine (iHerb)', 'hopcount-click-tracking' ) );
+	submit_button( __( 'Save label', 'hopcount-click-tracking' ), 'primary', '', false );
+	echo ' <a class="button" href="' . esc_url( octk_labels_page_url() ) . '">' . esc_html__( 'Cancel', 'hopcount-click-tracking' ) . '</a>';
 	echo '</form></div>';
 }

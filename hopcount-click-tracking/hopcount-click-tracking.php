@@ -1,23 +1,23 @@
 <?php
 /**
- * Plugin Name: Outbound Click Tracking
- * Plugin URI: https://github.com/idkfa2/outbound-click-tracking
+ * Plugin Name: Hopcount Click Tracking
+ * Plugin URI: https://github.com/idkfa2/hopcount-click-tracking
  * Description: Privacy-friendly outbound and affiliate click tracking. Server-side link pre-registration, token-only click endpoint, hourly aggregate counts, no cookies or per-click rows.
- * Version: 1.0.1
+ * Version: 1.1.0
  * Requires at least: 6.5
  * Requires PHP: 8.0
  * Author: aph5
  * Author URI: https://profiles.wordpress.org/aph5/
  * License: GPLv2 or later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
- * Text Domain: outbound-click-tracking
+ * Text Domain: hopcount-click-tracking
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'OCTK_VERSION', '1.0.1' );
+define( 'OCTK_VERSION', '1.1.0' );
 define( 'OCTK_PLUGIN_FILE', __FILE__ );
 define( 'OCTK_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 
@@ -42,8 +42,8 @@ register_activation_hook( __FILE__, static function () {
 	if ( is_multisite() ) {
 		deactivate_plugins( plugin_basename( __FILE__ ) );
 		wp_die(
-			esc_html__( 'Click Tracking does not support multisite in this version.', 'outbound-click-tracking' ),
-			esc_html__( 'Click Tracking', 'outbound-click-tracking' ),
+			esc_html__( 'Click Tracking does not support multisite in this version.', 'hopcount-click-tracking' ),
+			esc_html__( 'Click Tracking', 'hopcount-click-tracking' ),
 			array( 'back_link' => true )
 		);
 	}

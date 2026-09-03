@@ -31,11 +31,11 @@ const OCTK_DASHBOARD_PERIODS = array(
  */
 function octk_dashboard_period_labels(): array {
 	return array(
-		'today'     => __( 'Today', 'outbound-click-tracking' ),
-		'yesterday' => __( 'Yesterday', 'outbound-click-tracking' ),
-		'7'         => __( 'Last 7 days', 'outbound-click-tracking' ),
-		'30'        => __( 'Last 30 days', 'outbound-click-tracking' ),
-		'90'        => __( 'Last 90 days', 'outbound-click-tracking' ),
+		'today'     => __( 'Today', 'hopcount-click-tracking' ),
+		'yesterday' => __( 'Yesterday', 'hopcount-click-tracking' ),
+		'7'         => __( 'Last 7 days', 'hopcount-click-tracking' ),
+		'30'        => __( 'Last 30 days', 'hopcount-click-tracking' ),
+		'90'        => __( 'Last 90 days', 'hopcount-click-tracking' ),
 	);
 }
 
@@ -84,7 +84,7 @@ add_action( 'wp_dashboard_setup', static function () {
 		update_user_meta( get_current_user_id(), 'octk_dashboard_days', sanitize_key( $_GET['octk_widget_days'] ) );
 	}
 
-	wp_add_dashboard_widget( 'octk_dashboard', __( 'Outbound clicks', 'outbound-click-tracking' ), 'octk_render_dashboard_widget' );
+	wp_add_dashboard_widget( 'octk_dashboard', __( 'Outbound clicks', 'hopcount-click-tracking' ), 'octk_render_dashboard_widget' );
 } );
 
 /**
@@ -131,12 +131,12 @@ function octk_dashboard_data( string $period ) {
 function octk_dashboard_period_form( string $period ): void {
 	echo '<form method="get" action="' . esc_url( admin_url( 'index.php' ) ) . '" style="margin:0 0 8px;">';
 	wp_nonce_field( 'octk_widget_days', 'octk_widget_nonce', false );
-	echo '<label for="octk-widget-days" class="screen-reader-text">' . esc_html__( 'Period', 'outbound-click-tracking' ) . '</label>';
+	echo '<label for="octk-widget-days" class="screen-reader-text">' . esc_html__( 'Period', 'hopcount-click-tracking' ) . '</label>';
 	echo '<select name="octk_widget_days" id="octk-widget-days" onchange="this.form.submit()">';
 	foreach ( octk_dashboard_period_labels() as $key => $label ) {
 		printf( '<option value="%s"%s>%s</option>', esc_attr( $key ), selected( $period, $key, false ), esc_html( $label ) );
 	}
-	echo '</select><noscript> <button type="submit" class="button button-small">' . esc_html__( 'Apply', 'outbound-click-tracking' ) . '</button></noscript>';
+	echo '</select><noscript> <button type="submit" class="button button-small">' . esc_html__( 'Apply', 'hopcount-click-tracking' ) . '</button></noscript>';
 	echo '</form>';
 }
 
@@ -154,13 +154,13 @@ function octk_dashboard_report_url( string $period ): string {
 
 function octk_dashboard_zero_text( string $period ): string {
 	if ( 'today' === $period ) {
-		return __( 'No outbound clicks recorded today yet.', 'outbound-click-tracking' );
+		return __( 'No outbound clicks recorded today yet.', 'hopcount-click-tracking' );
 	}
 	if ( 'yesterday' === $period ) {
-		return __( 'No outbound clicks recorded yesterday.', 'outbound-click-tracking' );
+		return __( 'No outbound clicks recorded yesterday.', 'hopcount-click-tracking' );
 	}
 	/* translators: %d: number of days in the selected period. */
-	return sprintf( __( 'No outbound clicks recorded in the last %d days yet.', 'outbound-click-tracking' ), (int) $period );
+	return sprintf( __( 'No outbound clicks recorded in the last %d days yet.', 'hopcount-click-tracking' ), (int) $period );
 }
 
 function octk_render_dashboard_widget(): void {
@@ -168,11 +168,11 @@ function octk_render_dashboard_widget(): void {
 	$report_url = octk_dashboard_report_url( $period );
 
 	if ( ! OCTK_Reporting::schema_ready() ) {
-		echo '<p>' . esc_html__( 'Click tracking is unavailable.', 'outbound-click-tracking' ) . ' <a href="' . esc_url( admin_url( 'admin.php?page=octk-status' ) ) . '">' . esc_html__( 'Check status', 'outbound-click-tracking' ) . '</a>.</p>';
+		echo '<p>' . esc_html__( 'Click tracking is unavailable.', 'hopcount-click-tracking' ) . ' <a href="' . esc_url( admin_url( 'admin.php?page=octk-status' ) ) . '">' . esc_html__( 'Check status', 'hopcount-click-tracking' ) . '</a>.</p>';
 		return;
 	}
 	if ( ! octk_enabled() ) {
-		echo '<p>' . esc_html__( 'Tracking is currently disabled.', 'outbound-click-tracking' ) . ' <a href="' . esc_url( admin_url( 'admin.php?page=octk-settings' ) ) . '">' . esc_html__( 'Settings', 'outbound-click-tracking' ) . '</a></p>';
+		echo '<p>' . esc_html__( 'Tracking is currently disabled.', 'hopcount-click-tracking' ) . ' <a href="' . esc_url( admin_url( 'admin.php?page=octk-settings' ) ) . '">' . esc_html__( 'Settings', 'hopcount-click-tracking' ) . '</a></p>';
 		return;
 	}
 
@@ -180,20 +180,20 @@ function octk_render_dashboard_widget(): void {
 
 	$data = octk_dashboard_data( $period );
 	if ( null === $data ) {
-		echo '<p>' . esc_html__( 'The click summary is unavailable right now.', 'outbound-click-tracking' ) . ' <a href="' . esc_url( admin_url( 'admin.php?page=octk-status' ) ) . '">' . esc_html__( 'Check status', 'outbound-click-tracking' ) . '</a>.</p>';
+		echo '<p>' . esc_html__( 'The click summary is unavailable right now.', 'hopcount-click-tracking' ) . ' <a href="' . esc_url( admin_url( 'admin.php?page=octk-status' ) ) . '">' . esc_html__( 'Check status', 'hopcount-click-tracking' ) . '</a>.</p>';
 		return;
 	}
 
 	if ( 0 === $data->clicks ) {
 		echo '<p>' . esc_html( octk_dashboard_zero_text( $period ) ) . '</p>';
-		echo '<p><a href="' . esc_url( $report_url ) . '">' . esc_html__( 'View full click report &rarr;', 'outbound-click-tracking' ) . '</a></p>';
+		echo '<p><a href="' . esc_url( $report_url ) . '">' . esc_html__( 'View full click report &rarr;', 'hopcount-click-tracking' ) . '</a></p>';
 		return;
 	}
 
 	printf(
 		'<p style="font-size:20px;font-weight:600;margin:4px 0 12px;">%s <span style="font-size:13px;font-weight:400;color:#646970;">%s</span></p>',
 		esc_html( number_format_i18n( $data->clicks ) ),
-		esc_html__( 'total clicks', 'outbound-click-tracking' )
+		esc_html__( 'total clicks', 'hopcount-click-tracking' )
 	);
 
 	echo '<table style="width:100%;border-collapse:collapse;">';
@@ -221,7 +221,7 @@ function octk_render_dashboard_widget(): void {
 
 		// Secondary: the page it was clicked from.
 		$post  = get_post( (int) $row->source_id );
-		$title = $post ? get_the_title( $post ) : ( $row->source_url ?: __( 'Deleted post', 'outbound-click-tracking' ) );
+		$title = $post ? get_the_title( $post ) : ( $row->source_url ?: __( 'Deleted post', 'hopcount-click-tracking' ) );
 		if ( mb_strlen( $title ) > 55 ) {
 			$title = mb_substr( $title, 0, 52 ) . '…';
 		}
@@ -233,11 +233,11 @@ function octk_render_dashboard_widget(): void {
 			'<tr><td style="padding:4px 0;">%s<br /><span style="color:#787c82;font-size:12px;">%s</span></td><td style="padding:4px 0;text-align:right;white-space:nowrap;vertical-align:top;">%s</td></tr>',
 			$destination, // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped above.
 			/* translators: %s: title of the post the link was clicked on (already escaped HTML). */
-			sprintf( esc_html__( 'from %s', 'outbound-click-tracking' ), $source ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped above.
+			sprintf( esc_html__( 'from %s', 'hopcount-click-tracking' ), $source ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped above.
 			esc_html( number_format_i18n( (int) $row->clicks ) )
 		);
 	}
 	echo '</table>';
 
-	echo '<p style="margin-top:10px;"><a href="' . esc_url( $report_url ) . '">' . esc_html__( 'View full click report &rarr;', 'outbound-click-tracking' ) . '</a></p>';
+	echo '<p style="margin-top:10px;"><a href="' . esc_url( $report_url ) . '">' . esc_html__( 'View full click report &rarr;', 'hopcount-click-tracking' ) . '</a></p>';
 }

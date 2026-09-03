@@ -19,12 +19,12 @@ const OCTK_EXPORT_MAX_BATCHES = 100;
 add_action( 'admin_post_octk_export_csv', 'octk_handle_export_csv' );
 function octk_handle_export_csv(): void {
 	if ( ! current_user_can( octk_report_capability() ) ) {
-		wp_die( esc_html__( 'Sorry, you are not allowed to access this page.', 'outbound-click-tracking' ), '', 403 );
+		wp_die( esc_html__( 'Sorry, you are not allowed to access this page.', 'hopcount-click-tracking' ), '', 403 );
 	}
 	check_admin_referer( 'octk_export_csv' );
 
 	if ( ! OCTK_Reporting::schema_ready() ) {
-		wp_die( esc_html__( 'The tracking tables are unavailable.', 'outbound-click-tracking' ), '', 500 );
+		wp_die( esc_html__( 'The tracking tables are unavailable.', 'hopcount-click-tracking' ), '', 500 );
 	}
 
 	$request  = octk_report_request();
@@ -70,7 +70,7 @@ function octk_export_csv_stream( array $args ): void {
 	for ( $batch = 0; $batch < OCTK_EXPORT_MAX_BATCHES; $batch++ ) {
 		$rows = OCTK_Reporting::export_rows( $args, OCTK_EXPORT_BATCH, $batch * OCTK_EXPORT_BATCH );
 		if ( null === $rows ) {
-			octk_csv_row( $out, array( __( '(export aborted: report query failed)', 'outbound-click-tracking' ) ) );
+			octk_csv_row( $out, array( __( '(export aborted: report query failed)', 'hopcount-click-tracking' ) ) );
 			return;
 		}
 		if ( empty( $rows ) ) {
@@ -85,7 +85,7 @@ function octk_export_csv_stream( array $args ): void {
 		foreach ( $rows as $row ) {
 			$post  = get_post( (int) $row->source_id );
 			/* translators: %d: post ID. */
-			$title = $post ? get_the_title( $post ) : sprintf( __( '(deleted post #%d)', 'outbound-click-tracking' ), (int) $row->source_id );
+			$title = $post ? get_the_title( $post ) : sprintf( __( '(deleted post #%d)', 'hopcount-click-tracking' ), (int) $row->source_id );
 
 			$last_utc  = (string) $row->last_bucket;
 			$last_site = '';
@@ -114,7 +114,7 @@ function octk_export_csv_stream( array $args ): void {
 
 	octk_log( 'CSV export truncated at ' . ( OCTK_EXPORT_BATCH * OCTK_EXPORT_MAX_BATCHES ) . ' rows' );
 	/* translators: %d: maximum number of exported rows. */
-	octk_csv_row( $out, array( sprintf( __( '(export truncated at %d rows - narrow the filters)', 'outbound-click-tracking' ), OCTK_EXPORT_BATCH * OCTK_EXPORT_MAX_BATCHES ) ) );
+	octk_csv_row( $out, array( sprintf( __( '(export truncated at %d rows - narrow the filters)', 'hopcount-click-tracking' ), OCTK_EXPORT_BATCH * OCTK_EXPORT_MAX_BATCHES ) ) );
 }
 
 /**

@@ -1,7 +1,7 @@
 {
-	"name": "outbound-click-tracking-dev",
+	"name": "hopcount-click-tracking-dev",
 	"private": true,
-	"description": "Dev environment for the outbound-click-tracking WordPress plugin. Only outbound-click-tracking/ is ever deployed.",
+	"description": "Dev environment for the hopcount-click-tracking WordPress plugin. Only hopcount-click-tracking/ is ever deployed.",
 	"devDependencies": {
 		"@wordpress/env": "^10.0.0"
 	},

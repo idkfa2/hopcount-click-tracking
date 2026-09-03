@@ -1,9 +1,9 @@
 <p align="center">
-  <img src="wp-org-assets/banner-1544x500.png" alt="Outbound Click Tracking" width="772">
+  <img src="wp-org-assets/banner-1544x500.png" alt="Hopcount Click Tracking" width="772">
 </p>
 
 <p align="center">
-  <a href="https://github.com/idkfa2/outbound-click-tracking/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/idkfa2/outbound-click-tracking?label=release&color=1e4fb5"></a>
+  <a href="https://github.com/idkfa2/hopcount-click-tracking/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/idkfa2/hopcount-click-tracking?label=release&color=1e4fb5"></a>
   <img alt="WordPress 6.5+" src="https://img.shields.io/badge/WordPress-6.5%2B-21759b?logo=wordpress&logoColor=white">
   <img alt="PHP 8.0+" src="https://img.shields.io/badge/PHP-8.0%2B-777bb4?logo=php&logoColor=white">
   <img alt="Tests" src="https://img.shields.io/badge/tests-141%20passing-2ea44f">
@@ -17,7 +17,7 @@
 
 ---
 
-**Outbound Click Tracking** records how often visitors click the outbound and affiliate links in your posts and pages and shows the totals in wp-admin. Links keep their real `href` (no cloaking or redirects, which search engines and affiliate programme terms both prefer), and the only thing stored is an hourly count per link.
+**Hopcount Click Tracking** records how often visitors click the outbound and affiliate links in your posts and pages and shows the totals in wp-admin. Links keep their real `href` (no cloaking or redirects, which search engines and affiliate programme terms both prefer), and the only thing stored is an hourly count per link.
 
 ## Contents
 
@@ -41,7 +41,7 @@
 
 Most link-tracking plugins are redirectors: every click goes through your server, and every click becomes a database row. This plugin takes the opposite approach.
 
-| | Outbound Click Tracking | Redirect / cloaking plugins |
+| | Hopcount Click Tracking | Redirect / cloaking plugins |
 |---|---|---|
 | Link `href` | Unchanged, real destination | Rewritten to `/go/...` on your site |
 | Per-click storage | None, hourly aggregates only | One row per click, often with IP and user agent |
@@ -86,13 +86,13 @@ Because tokens live in the rendered HTML, cached pages keep tracking without tou
 
 **From a release zip**
 
-1. Download `outbound-click-tracking-x.y.z.zip` from the [latest release](https://github.com/idkfa2/outbound-click-tracking/releases/latest).
+1. Download `hopcount-click-tracking-x.y.z.zip` from the [latest release](https://github.com/idkfa2/hopcount-click-tracking/releases/latest).
 2. In wp-admin go to **Plugins > Add New > Upload Plugin**, upload the zip and activate.
 
 **From source**
 
-1. Copy the `outbound-click-tracking/` folder into `wp-content/plugins/`.
-2. Activate **Outbound Click Tracking**.
+1. Copy the `hopcount-click-tracking/` folder into `wp-content/plugins/`.
+2. Activate **Hopcount Click Tracking**.
 
 Tables and the daily retention cron are created on activation; schema migrations run automatically on load. Visit **Click Tracking > Settings** to review the defaults.
 
@@ -180,14 +180,18 @@ There are no cookies, no personal data and no per-visitor records, so no consent
 **Does it support multisite?**
 Not yet. Activation on a multisite network is refused.
 
+## Upgrading from 1.0.x
+
+Version 1.1.0 changed only the plugin name and folder: `outbound-click-tracking` became `hopcount-click-tracking`. Nothing in the code prefix, hooks, tables, options or REST route changed, so no data migration runs. Deactivate the old folder, upload the new one, activate it, and delete the old folder. Settings, labels and click counts are all preserved.
+
 ## Upgrading from the pre-1.0 release
 
-Version 1.0.0 renamed the plugin (slug, prefix, hooks and REST route) to `outbound-click-tracking` / `octk_`. Existing data is adopted automatically on the first load: tables, options, the retention cron, transients and the dashboard widget preference are renamed in place. Nothing is copied and nothing is deleted.
+Version 1.0.0 renamed the plugin (slug, prefix, hooks and REST route) to `octk_`. Existing data is adopted automatically on the first load: tables, options, the retention cron, transients and the dashboard widget preference are renamed in place. Nothing is copied and nothing is deleted.
 
 1. Back up the database.
-2. Upload the new `outbound-click-tracking/` folder next to the old one.
+2. Upload the new `hopcount-click-tracking/` folder next to the old one.
 3. Deactivate **Click Tracking** (the old plugin). The migration refuses to run while it is active.
-4. Activate **Outbound Click Tracking**. Check **Click Tracking > Status**: "Legacy data migration" should read "not needed or complete".
+4. Activate **Hopcount Click Tracking**. Check **Click Tracking > Status**: "Legacy data migration" should read "not needed or complete".
 5. Purge any page cache, then delete the old plugin folder (its uninstall routine keeps data by default).
 6. Update anything that referenced the old names: filters in site code, and any CDN or WAF rule on the old endpoint path (now `/wp-json/octk/v1/click`).
 
@@ -202,10 +206,10 @@ npm install
 npx wp-env start                       # dev site on localhost:8888, tests on 8889
 docker run --rm -v "$PWD/tests":/app -w /app composer:2 install
 npx wp-env run tests-cli --env-cwd=octk-tests vendor/bin/phpunit
-npx wp-env run cli wp plugin check outbound-click-tracking --categories=plugin_repo
+npx wp-env run cli wp plugin check hopcount-click-tracking --categories=plugin_repo
 ```
 
-Layout: `outbound-click-tracking/` is the plugin and the only folder that ships; `tests/` is the PHPUnit suite (runs inside the wp-env tests container); `wp-org-assets/` holds the WordPress.org banner, icon and screenshots (SVN `assets/`, not part of the plugin).
+Layout: `hopcount-click-tracking/` is the plugin and the only folder that ships; `tests/` is the PHPUnit suite (runs inside the wp-env tests container); `wp-org-assets/` holds the WordPress.org banner, icon and screenshots (SVN `assets/`, not part of the plugin).
 
 ## Releasing
 
@@ -213,11 +217,11 @@ Tag `vX.Y.Z` and build the distributable zip from the tag:
 
 ```sh
 mkdir -p build
-git archive --format=zip --prefix=outbound-click-tracking/ \
-  --output=build/outbound-click-tracking-X.Y.Z.zip vX.Y.Z:outbound-click-tracking
+git archive --format=zip --prefix=hopcount-click-tracking/ \
+  --output=build/hopcount-click-tracking-X.Y.Z.zip vX.Y.Z:hopcount-click-tracking
 ```
 
-The zip contains a single `outbound-click-tracking/` root with `outbound-click-tracking.php` and `readme.txt` directly inside it (dot-files are excluded via `export-ignore`). Attach it to the GitHub release.
+The zip contains a single `hopcount-click-tracking/` root with `hopcount-click-tracking.php` and `readme.txt` directly inside it (dot-files are excluded via `export-ignore`). Attach it to the GitHub release.
 
 ## License
 

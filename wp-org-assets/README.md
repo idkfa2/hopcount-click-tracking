@@ -15,7 +15,7 @@ These files go into the SVN `assets/` directory of the wp.org listing, not into 
 | `screenshot-4.png` | any | Status page |
 | `screenshot-5.png` | any | Dashboard widget |
 
-Screenshot captions live in the `== Screenshots ==` section of `outbound-click-tracking/readme.txt` and must stay in the same order. Spec: https://developer.wordpress.org/plugins/wordpress-org/plugin-assets/
+Screenshot captions live in the `== Screenshots ==` section of `hopcount-click-tracking/readme.txt` and must stay in the same order. Spec: https://developer.wordpress.org/plugins/wordpress-org/plugin-assets/
 
 ## Regenerating
 

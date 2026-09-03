@@ -2,7 +2,7 @@
 	"core": "https://wordpress.org/wordpress-7.1.zip",
 	"phpVersion": "8.4",
 	"plugins": [
-		"./outbound-click-tracking",
+		"./hopcount-click-tracking",
 		"https://downloads.wordpress.org/plugin/shortcoder.zip",
 		"https://downloads.wordpress.org/plugin/plugin-check.zip"
 	],

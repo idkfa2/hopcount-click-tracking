@@ -1,12 +1,12 @@
-# Outbound Click Tracking (`outbound-click-tracking`)
+# Hopcount Click Tracking (`hopcount-click-tracking`)
 
-WordPress plugin that records clicks on outbound/affiliate links and reports them in wp-admin. Site-agnostic since v0.5.1; renamed to `outbound-click-tracking` / `octk_` in v1.0.0 for WordPress.org (account `aph5`). Public GitHub repo: `idkfa2/outbound-click-tracking` (branch `main`, releases tagged `vX.Y.Z`).
+WordPress plugin that records clicks on outbound/affiliate links and reports them in wp-admin. Site-agnostic since v0.5.1; renamed to `outbound-click-tracking` / `octk_` in v1.0.0 for WordPress.org (account `aph5`), then to `hopcount-click-tracking` in v1.1.0 after the wp.org review flagged the generic name (prefix `octk_` deliberately kept). Public GitHub repo: `idkfa2/hopcount-click-tracking` (branch `main`, releases tagged `vX.Y.Z`).
 
 Site-specific deployment material is not part of this repo; a gitignored `local/` folder and `CLAUDE.local.md` may hold it on a developer's machine.
 
 ## Layout
 
-- `outbound-click-tracking/` - **the plugin. Only this folder is ever deployed.**
+- `hopcount-click-tracking/` - **the plugin. Only this folder is ever deployed.**
 - `tests/` - PHPUnit suite (runs inside wp-env tests container); 141 tests / 660 assertions
 - `wp-org-assets/` - banner/icon/screenshots for the wp.org SVN `assets/` dir (not part of the plugin)
 - `README.md` - user-facing docs (install, settings, filters); `CHANGELOG.md` - release notes
@@ -53,11 +53,11 @@ Click Tracking menu in wp-admin: **Report** (presets + custom range, host filter
 - The endpoint is intentionally public and POST-only; the master switch (Settings) 403s beacons instantly, including from cached pages.
 - Multisite is refused at activation.
 - **Legacy adoption** (`octk_adopt_legacy()` in `schema.php`): the only place `flhct` appears in shipped code. Runs when `flhct_schema_version` exists and `octk_schema_version` does not; renames tables/options/cron/meta in place; refuses (admin notice + Status row, transient `octk_adopt_error`) while the old plugin is active or when populated tables exist on both sides. `octk_schema_version` is written last. Tests: `tests/test-adoption.php` (base tables; DDL commits the test transaction, so tear_down cleans explicitly).
-- Plugin Check: `npx wp-env run cli wp plugin check outbound-click-tracking --categories=plugin_repo` (plugin-check is in `.wp-env.json`). Must be error-free before any wp.org submission.
+- Plugin Check: `npx wp-env run cli wp plugin check hopcount-click-tracking --categories=plugin_repo` (plugin-check is in `.wp-env.json`). Must be error-free before any wp.org submission.
 
 ## Release workflow
 
-Minor bump per feature, tests green, manual check on the wp-env dev site, tag `vX.Y.Z`, GitHub release with the zip from `git archive --format=zip --prefix=outbound-click-tracking/ vX.Y.Z:outbound-click-tracking`. Commits authored as the repo's git identity, never with AI trailers.
+Minor bump per feature, tests green, manual check on the wp-env dev site, tag `vX.Y.Z`, GitHub release with the zip from `git archive --format=zip --prefix=hopcount-click-tracking/ vX.Y.Z:hopcount-click-tracking`. Commits authored as the repo's git identity, never with AI trailers.
 
 ## Writing style
 
