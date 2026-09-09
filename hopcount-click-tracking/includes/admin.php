@@ -109,11 +109,11 @@ function octk_search_source_titles( string $needle ): array {
 	$ids = $wpdb->get_col(
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $placeholders / $token_where are placeholder lists built above; all values are prepared.
 		$wpdb->prepare(
-			"SELECT ID FROM {$wpdb->posts}
+			"SELECT ID FROM %i
 			WHERE post_status = 'publish' AND post_type IN ({$placeholders})
 			AND {$token_where}
 			ORDER BY post_date DESC LIMIT %d",
-			array_merge( $types, $likes, array( OCTK_Reporting::MAX_SOURCE_IDS + 1 ) )
+			array_merge( array( $wpdb->posts ), $types, $likes, array( OCTK_Reporting::MAX_SOURCE_IDS + 1 ) )
 		)
 	);
 	return array_map( 'intval', is_array( $ids ) ? $ids : array() );

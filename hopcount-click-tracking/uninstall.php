@@ -14,9 +14,9 @@ if ( '1' !== get_option( 'octk_uninstall_delete', '0' ) ) {
 
 global $wpdb;
 
-$wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}octk_clicks_hourly" );
-$wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}octk_links" );
-$wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}octk_label_overrides" );
+foreach ( array( 'octk_clicks_hourly', 'octk_links', 'octk_label_overrides' ) as $octk_table ) {
+	$wpdb->query( $wpdb->prepare( 'DROP TABLE IF EXISTS %i', $wpdb->prefix . $octk_table ) );
+}
 
 foreach ( array(
 	'octk_schema_version',
