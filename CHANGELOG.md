@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.1 - 2026-09-09
+
+- Every SQL statement, including schema migrations, legacy adoption (RENAME/DROP), status counts and the report queries, now goes through `wpdb::prepare()` with `%i` identifier placeholders for table names. The report sort is chosen by array lookup from four complete `ORDER BY` literals instead of substituting whitelisted fragments into the query. No behaviour change; addresses the WordPress.org plugin review (unsafe SQL calls, review R hopcount-click-tracking/aph5/31Aug26/T2 9Sep26).
+
 ## 1.1.0 - 2026-09-03
 
 - Renamed to **Hopcount Click Tracking**: slug and text domain `hopcount-click-tracking`, main file `hopcount-click-tracking/hopcount-click-tracking.php`. The code prefix `octk_`, all hooks, table names, options, the REST route and the link attribute are unchanged, so existing data and site code carry over. Upgrading is a folder swap: deactivate the `outbound-click-tracking` folder, upload `hopcount-click-tracking`, activate.

@@ -56,14 +56,14 @@ function octk_schema_v2_ready( bool $recheck = false ): bool {
 	$links     = octk_table_links();
 	$overrides = octk_table_overrides();
 
-	$columns = $wpdb->get_col( "SHOW COLUMNS FROM {$links}", 0 );
-	$indexes = $wpdb->get_col( "SHOW INDEX FROM {$links}", 2 );
+	$columns = $wpdb->get_col( $wpdb->prepare( 'SHOW COLUMNS FROM %i', $links ), 0 );
+	$indexes = $wpdb->get_col( $wpdb->prepare( 'SHOW INDEX FROM %i', $links ), 2 );
 
 	// SELECT probe, not SHOW TABLES: also validates the columns, and remains
 	// visible for TEMPORARY shadow tables (the WP test framework rewrites
 	// CREATE TABLE to CREATE TEMPORARY TABLE).
 	$suppress = $wpdb->suppress_errors( true );
-	$probe    = $wpdb->query( "SELECT destination_hash, destination_url, label, updated_at_utc FROM {$overrides} LIMIT 1" );
+	$probe    = $wpdb->query( $wpdb->prepare( 'SELECT destination_hash, destination_url, label, updated_at_utc FROM %i LIMIT 1', $overrides ) );
 	$wpdb->suppress_errors( $suppress );
 
 	$ready = is_array( $columns ) && in_array( 'label', $columns, true )
@@ -139,11 +139,11 @@ function octk_adopt_legacy(): bool {
 		$new_exists = octk_base_table_exists( $new );
 
 		if ( $old_exists && ! $new_exists ) {
-			$renames[] = "{$old} TO {$new}";
+			$renames[] = array( $old, $new );
 		} elseif ( $old_exists && $new_exists ) {
-			$old_rows = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$old}" );
+			$old_rows = (int) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM %i', $old ) );
 			if ( $old_rows > 0 ) {
-				$new_rows = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$new}" );
+				$new_rows = (int) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM %i', $new ) );
 				return octk_adopt_fail( sprintf( 'both %s (%d rows) and %s (%d rows) exist; nothing was changed', $old, $old_rows, $new, $new_rows ) );
 			}
 			$drops[] = $old;
@@ -154,12 +154,18 @@ function octk_adopt_legacy(): bool {
 
 	// Mutate.
 	foreach ( $drops as $table ) {
-		if ( false === $wpdb->query( "DROP TABLE {$table}" ) ) {
+		if ( false === $wpdb->query( $wpdb->prepare( 'DROP TABLE %i', $table ) ) ) {
 			return octk_adopt_fail( "could not drop empty stray table {$table}: " . $wpdb->last_error );
 		}
 	}
-	if ( $renames && false === $wpdb->query( 'RENAME TABLE ' . implode( ', ', $renames ) ) ) { // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- table names built from $wpdb->prefix and constants only.
-		return octk_adopt_fail( 'rename failed: ' . $wpdb->last_error );
+	if ( $renames ) {
+		// One "%i TO %i" pair per table; every identifier goes through prepare().
+		$pairs  = implode( ', ', array_fill( 0, count( $renames ), '%i TO %i' ) );
+		$idents = array_merge( ...$renames );
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $pairs is a placeholder list built above; all identifiers are prepared.
+		if ( false === $wpdb->query( $wpdb->prepare( "RENAME TABLE {$pairs}", $idents ) ) ) {
+			return octk_adopt_fail( 'rename failed: ' . $wpdb->last_error );
+		}
 	}
 	if ( ! octk_tables_exist() ) {
 		return octk_adopt_fail( 'tables missing after rename' );
@@ -264,8 +270,9 @@ function octk_migration_1(): bool {
 	$links           = octk_table_links();
 	$clicks          = octk_table_clicks();
 
-	$links_ok = false !== $wpdb->query(
-		"CREATE TABLE IF NOT EXISTS {$links} (
+	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $charset_collate is wpdb::get_charset_collate(); the table name is prepared.
+	$links_ok = false !== $wpdb->query( $wpdb->prepare(
+		"CREATE TABLE IF NOT EXISTS %i (
 			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
 			public_token BINARY(16) NOT NULL,
 			identity_hash BINARY(32) NOT NULL,
@@ -280,18 +287,21 @@ function octk_migration_1(): bool {
 			UNIQUE KEY identity_hash (identity_hash),
 			KEY source (source_type, source_id),
 			KEY destination_host (destination_host)
-		) ENGINE=InnoDB {$charset_collate}"
-	);
+		) ENGINE=InnoDB {$charset_collate}",
+		$links
+	) );
 
-	$clicks_ok = false !== $wpdb->query(
-		"CREATE TABLE IF NOT EXISTS {$clicks} (
+	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $charset_collate is wpdb::get_charset_collate(); the table name is prepared.
+	$clicks_ok = false !== $wpdb->query( $wpdb->prepare(
+		"CREATE TABLE IF NOT EXISTS %i (
 			link_id BIGINT UNSIGNED NOT NULL,
 			bucket_start_utc DATETIME NOT NULL,
 			hits BIGINT UNSIGNED NOT NULL DEFAULT 0,
 			PRIMARY KEY (link_id, bucket_start_utc),
 			KEY bucket_start_utc (bucket_start_utc)
-		) ENGINE=InnoDB {$charset_collate}"
-	);
+		) ENGINE=InnoDB {$charset_collate}",
+		$clicks
+	) );
 
 	return $links_ok && $clicks_ok && octk_tables_exist();
 }
@@ -307,39 +317,41 @@ function octk_migration_2(): bool {
 	$links           = octk_table_links();
 	$overrides       = octk_table_overrides();
 
-	$columns = $wpdb->get_col( "SHOW COLUMNS FROM {$links}", 0 );
+	$columns = $wpdb->get_col( $wpdb->prepare( 'SHOW COLUMNS FROM %i', $links ), 0 );
 	if ( ! is_array( $columns ) ) {
 		return false;
 	}
 
 	if ( ! in_array( 'label', $columns, true )
-		&& false === $wpdb->query( "ALTER TABLE {$links} ADD COLUMN label VARCHAR(200) NULL DEFAULT NULL AFTER destination_host" ) ) {
+		&& false === $wpdb->query( $wpdb->prepare( 'ALTER TABLE %i ADD COLUMN label VARCHAR(200) NULL DEFAULT NULL AFTER destination_host', $links ) ) ) {
 		octk_log( 'migration 2: adding label column failed: ' . $wpdb->last_error );
 		return false;
 	}
 
 	if ( ! in_array( 'destination_hash', $columns, true )
-		&& false === $wpdb->query( "ALTER TABLE {$links} ADD COLUMN destination_hash BINARY(32) NULL DEFAULT NULL AFTER destination_host" ) ) {
+		&& false === $wpdb->query( $wpdb->prepare( 'ALTER TABLE %i ADD COLUMN destination_hash BINARY(32) NULL DEFAULT NULL AFTER destination_host', $links ) ) ) {
 		octk_log( 'migration 2: adding destination_hash column failed: ' . $wpdb->last_error );
 		return false;
 	}
 
-	$indexes = $wpdb->get_col( "SHOW INDEX FROM {$links}", 2 );
+	$indexes = $wpdb->get_col( $wpdb->prepare( 'SHOW INDEX FROM %i', $links ), 2 );
 	if ( is_array( $indexes ) && ! in_array( 'destination_hash', $indexes, true )
-		&& false === $wpdb->query( "ALTER TABLE {$links} ADD KEY destination_hash (destination_hash)" ) ) {
+		&& false === $wpdb->query( $wpdb->prepare( 'ALTER TABLE %i ADD KEY destination_hash (destination_hash)', $links ) ) ) {
 		octk_log( 'migration 2: adding destination_hash index failed: ' . $wpdb->last_error );
 		return false;
 	}
 
-	if ( false === $wpdb->query(
-		"CREATE TABLE IF NOT EXISTS {$overrides} (
+	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $charset_collate is wpdb::get_charset_collate(); the table name is prepared.
+	if ( false === $wpdb->query( $wpdb->prepare(
+		"CREATE TABLE IF NOT EXISTS %i (
 			destination_hash BINARY(32) NOT NULL,
 			destination_url VARCHAR(2048) NOT NULL,
 			label VARCHAR(200) NOT NULL,
 			updated_at_utc DATETIME NOT NULL,
 			PRIMARY KEY (destination_hash)
-		) ENGINE=InnoDB {$charset_collate}"
-	) ) {
+		) ENGINE=InnoDB {$charset_collate}",
+		$overrides
+	) ) ) {
 		octk_log( 'migration 2: creating override table failed: ' . $wpdb->last_error );
 		return false;
 	}
@@ -347,7 +359,7 @@ function octk_migration_2(): bool {
 	// Backfill destination_hash in bounded batches. SHA2 over the stored
 	// utf8mb4 bytes equals PHP hash('sha256', $url) over the same UTF-8 string.
 	for ( $i = 0; $i < 100; $i++ ) {
-		$affected = $wpdb->query( "UPDATE {$links} SET destination_hash = UNHEX(SHA2(destination_url, 256)) WHERE destination_hash IS NULL LIMIT 500" );
+		$affected = $wpdb->query( $wpdb->prepare( 'UPDATE %i SET destination_hash = UNHEX(SHA2(destination_url, 256)) WHERE destination_hash IS NULL LIMIT 500', $links ) );
 		if ( false === $affected ) {
 			octk_log( 'migration 2: destination_hash backfill failed: ' . $wpdb->last_error );
 			return false;

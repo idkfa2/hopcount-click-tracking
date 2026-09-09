@@ -75,7 +75,7 @@ function octk_handle_click( WP_REST_Request $request ) {
 	// 4. Unique-index lookup; every known token is eligible in v1.
 	$links   = octk_table_links();
 	$link_id = $wpdb->get_var(
-		$wpdb->prepare( "SELECT id FROM {$links} WHERE public_token = UNHEX(%s)", $token )
+		$wpdb->prepare( 'SELECT id FROM %i WHERE public_token = UNHEX(%s)', $links, $token )
 	);
 	if ( null === $link_id ) {
 		return new WP_Error( 'octk_unknown_token', __( 'Unknown token.', 'hopcount-click-tracking' ), array( 'status' => 404 ) );
@@ -85,7 +85,8 @@ function octk_handle_click( WP_REST_Request $request ) {
 	$clicks = octk_table_clicks();
 	$result = $wpdb->query(
 		$wpdb->prepare(
-			"INSERT INTO {$clicks} (link_id, bucket_start_utc, hits) VALUES (%d, %s, 1) ON DUPLICATE KEY UPDATE hits = hits + 1",
+			'INSERT INTO %i (link_id, bucket_start_utc, hits) VALUES (%d, %s, 1) ON DUPLICATE KEY UPDATE hits = hits + 1',
+			$clicks,
 			(int) $link_id,
 			octk_bucket_for( time() )
 		)

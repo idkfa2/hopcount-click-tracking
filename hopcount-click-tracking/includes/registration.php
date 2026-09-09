@@ -120,11 +120,13 @@ class OCTK_Registry {
 			$values[] = $hash_hex;
 		}
 
-		$sql = "UPDATE {$table} SET label = CASE identity_hash " . implode( ' ', $when ) . ' END'
+		// $when / $in are placeholder lists built above ("WHEN UNHEX(%s) THEN %s",
+		// "UNHEX(%s)"); every value, and the table name, goes through prepare().
+		$sql = 'UPDATE %i SET label = CASE identity_hash ' . implode( ' ', $when ) . ' END'
 			. ' WHERE identity_hash IN (' . implode( ', ', $in ) . ') AND label IS NULL';
 
-		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-		if ( false === $wpdb->query( $wpdb->prepare( $sql, $values ) ) ) {
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- placeholder-only SQL built above.
+		if ( false === $wpdb->query( $wpdb->prepare( $sql, array_merge( array( $table ), $values ) ) ) ) {
 			octk_log( 'label fill failed: ' . $wpdb->last_error );
 			return;
 		}
@@ -146,7 +148,8 @@ class OCTK_Registry {
 		$table = octk_table_links();
 		$rows  = $wpdb->get_results(
 			$wpdb->prepare(
-				"SELECT HEX(identity_hash) AS h, HEX(public_token) AS t, destination_url, label FROM {$table} WHERE source_type = %s AND source_id = %d",
+				'SELECT HEX(identity_hash) AS h, HEX(public_token) AS t, destination_url, label FROM %i WHERE source_type = %s AND source_id = %d',
+				$table,
 				$source_type,
 				$source_id
 			)
@@ -189,12 +192,14 @@ class OCTK_Registry {
 			array_push( $values, $token_hex, $hash_hex, $source_type, $source_id, $source_url, $dest['url'], $dest['host'], hash( 'sha256', $dest['url'] ), $dest['label'] ?? '', $now );
 		}
 
-		$sql = "INSERT INTO {$table} (public_token, identity_hash, source_type, source_id, source_url, destination_url, destination_host, destination_hash, label, created_at_utc) VALUES "
+		// $placeholders is one placeholder tuple per row (built above); every
+		// value, and the table name, goes through prepare().
+		$sql = 'INSERT INTO %i (public_token, identity_hash, source_type, source_id, source_url, destination_url, destination_host, destination_hash, label, created_at_utc) VALUES '
 			. implode( ', ', $placeholders )
 			. ' ON DUPLICATE KEY UPDATE id = id';
 
-		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-		if ( false === $wpdb->query( $wpdb->prepare( $sql, $values ) ) ) {
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- placeholder-only SQL built above.
+		if ( false === $wpdb->query( $wpdb->prepare( $sql, array_merge( array( $table ), $values ) ) ) ) {
 			octk_log( 'registration insert failed: ' . $wpdb->last_error );
 			return array();
 		}
@@ -230,10 +235,10 @@ class OCTK_Registry {
 		$placeholders = implode( ', ', array_fill( 0, count( $hashes ), 'UNHEX(%s)' ) );
 
 		$rows = $wpdb->get_results(
-			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $placeholders is a "UNHEX(%s), ..." list built above; all values are prepared.
 			$wpdb->prepare(
-				"SELECT HEX(identity_hash) AS h, HEX(public_token) AS t, source_type, source_id, destination_url, label FROM {$table} WHERE identity_hash IN ({$placeholders})",
-				$hashes
+				"SELECT HEX(identity_hash) AS h, HEX(public_token) AS t, source_type, source_id, destination_url, label FROM %i WHERE identity_hash IN ({$placeholders})",
+				array_merge( array( $table ), $hashes )
 			)
 		);
 		if ( ! is_array( $rows ) ) {
@@ -272,7 +277,8 @@ class OCTK_Registry {
 			$token_hex = self::new_token_hex();
 			$result    = $wpdb->query(
 				$wpdb->prepare(
-					"INSERT INTO {$table} (public_token, identity_hash, source_type, source_id, source_url, destination_url, destination_host, destination_hash, label, created_at_utc) VALUES (UNHEX(%s), UNHEX(%s), %s, %d, %s, %s, %s, UNHEX(%s), NULLIF(%s, ''), %s) ON DUPLICATE KEY UPDATE id = id",
+					"INSERT INTO %i (public_token, identity_hash, source_type, source_id, source_url, destination_url, destination_host, destination_hash, label, created_at_utc) VALUES (UNHEX(%s), UNHEX(%s), %s, %d, %s, %s, %s, UNHEX(%s), NULLIF(%s, ''), %s) ON DUPLICATE KEY UPDATE id = id",
+					$table,
 					$token_hex,
 					$hash_hex,
 					$source_type,

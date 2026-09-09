@@ -202,5 +202,5 @@ function octk_invalidate_labels_on_save( $post_id, $post ): void {
 	global $wpdb;
 	$links = octk_table_links();
 	// Pages register as source_type 'post' too (render path uses get_the_ID()).
-	$wpdb->query( $wpdb->prepare( "UPDATE {$links} SET label = NULL WHERE source_type = %s AND source_id = %d", 'post', (int) $post_id ) );
+	$wpdb->query( $wpdb->prepare( "UPDATE %i SET label = NULL WHERE source_type = %s AND source_id = %d", $links, 'post', (int) $post_id ) );
 }

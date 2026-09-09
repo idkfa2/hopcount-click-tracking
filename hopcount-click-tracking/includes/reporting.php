@@ -56,10 +56,28 @@ class OCTK_Reporting {
 		return array_slice( is_array( $tokens ) ? $tokens : array(), 0, 10 );
 	}
 
-	private const ORDERBY = array(
-		'clicks'        => 'clicks',
-		'last_activity' => 'last_bucket',
+	/**
+	 * Complete ORDER BY clauses, keyed by "<orderby>_<order>". Chosen by
+	 * array lookup only, so no request value is ever concatenated into SQL.
+	 */
+	private const ORDER_SQL = array(
+		'clicks_desc'        => 'ORDER BY clicks DESC, l.id ASC',
+		'clicks_asc'         => 'ORDER BY clicks ASC, l.id ASC',
+		'last_activity_desc' => 'ORDER BY last_bucket DESC, l.id ASC',
+		'last_activity_asc'  => 'ORDER BY last_bucket ASC, l.id ASC',
 	);
+
+	/** Resolve request orderby/order to one of the ORDER_SQL literals. */
+	private static function order_sql( array $args ): string {
+		$orderby = ( 'last_activity' === ( $args['orderby'] ?? '' ) ) ? 'last_activity' : 'clicks';
+		$order   = ( 'asc' === strtolower( $args['order'] ?? '' ) ) ? 'asc' : 'desc';
+		return self::ORDER_SQL[ "{$orderby}_{$order}" ];
+	}
+
+	/** Table identifiers for the %i placeholders, in the order the queries use them. */
+	private static function join_tables(): array {
+		return array( octk_table_clicks(), octk_table_links(), octk_table_overrides() );
+	}
 
 	/**
 	 * Paginated per-identity rows for a UTC range.
@@ -80,23 +98,19 @@ class OCTK_Reporting {
 	public static function query_rows( array $args ) {
 		global $wpdb;
 
-		$links  = octk_table_links();
-		$clicks = octk_table_clicks();
-		$join   = self::overrides_join_sql();
+		$join = self::overrides_join_sql();
 
 		list( $where, $values ) = self::build_where( $args );
 
-		$orderby   = self::ORDERBY[ $args['orderby'] ?? '' ] ?? 'clicks';
-		$order     = ( 'asc' === strtolower( $args['order'] ?? '' ) ) ? 'ASC' : 'DESC';
-		$per_page  = in_array( (int) ( $args['per_page'] ?? 0 ), self::PER_PAGE_CHOICES, true ) ? (int) $args['per_page'] : self::PER_PAGE_CHOICES[0];
-		$page      = max( 1, (int) ( $args['page'] ?? 1 ) );
-		$offset    = ( $page - 1 ) * $per_page;
+		$per_page = in_array( (int) ( $args['per_page'] ?? 0 ), self::PER_PAGE_CHOICES, true ) ? (int) $args['per_page'] : self::PER_PAGE_CHOICES[0];
+		$page     = max( 1, (int) ( $args['page'] ?? 1 ) );
+		$offset   = ( $page - 1 ) * $per_page;
 
 		$total = $wpdb->get_var(
-			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $join / $where are placeholder-only fragments (overrides_join_sql, build_where); tables and values are prepared.
 			$wpdb->prepare(
-				"SELECT COUNT(DISTINCT c.link_id) FROM {$clicks} c JOIN {$links} l ON l.id = c.link_id {$join} WHERE {$where}",
-				$values
+				"SELECT COUNT(DISTINCT c.link_id) FROM %i c JOIN %i l ON l.id = c.link_id {$join} WHERE {$where}",
+				array_merge( self::join_tables(), $values )
 			)
 		);
 		if ( null === $total && '' !== $wpdb->last_error ) {
@@ -104,14 +118,10 @@ class OCTK_Reporting {
 			return null;
 		}
 
-		$sql = self::row_select_sql( $where ) . ' LIMIT %d OFFSET %d';
-
+		$sql  = self::row_select_sql( $where, self::order_sql( $args ) );
 		$rows = $wpdb->get_results(
-			$wpdb->prepare(
-				// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $orderby/$order come from the ORDERBY/ORDER whitelists above, never from input.
-				str_replace( array( '{orderby}', '{order}' ), array( $orderby, $order ), $sql ),
-				array_merge( $values, array( $per_page, $offset ) )
-			)
+			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $sql is placeholder-only SQL (row_select_sql); tables and values are prepared.
+			$wpdb->prepare( $sql, array_merge( self::join_tables(), $values, array( $per_page, $offset ) ) )
 		);
 		if ( ! is_array( $rows ) ) {
 			octk_log( 'report query failed: ' . $wpdb->last_error );
@@ -131,22 +141,25 @@ class OCTK_Reporting {
 	 * default utf8mb4 collation is case-insensitive and destination
 	 * equality is a byte-level promise. Never selects tokens, identity
 	 * hashes, or internal ids.
+	 *
+	 * Returns placeholder-only SQL: %i for the three tables (join_tables()
+	 * order), the build_where() placeholders, then %d LIMIT / %d OFFSET.
+	 * $order_sql is one of the ORDER_SQL literals.
 	 */
-	private static function row_select_sql( string $where ): string {
-		$links  = octk_table_links();
-		$clicks = octk_table_clicks();
-		$join   = self::overrides_join_sql();
+	private static function row_select_sql( string $where, string $order_sql ): string {
+		$join = self::overrides_join_sql();
 
 		return "SELECT l.source_type, l.source_id, l.source_url, l.destination_url, l.destination_host,
 				COALESCE(o.label, l.label) AS label,
 				CASE WHEN o.label IS NOT NULL THEN 'manual' WHEN l.label IS NOT NULL THEN 'auto' ELSE '' END AS label_origin,
 				SUM(c.hits) AS clicks, MAX(c.bucket_start_utc) AS last_bucket
-				FROM {$clicks} c
-				JOIN {$links} l ON l.id = c.link_id
+				FROM %i c
+				JOIN %i l ON l.id = c.link_id
 				{$join}
 				WHERE {$where}
 				GROUP BY l.id
-				ORDER BY {orderby} {order}, l.id ASC";
+				{$order_sql}
+				LIMIT %d OFFSET %d";
 	}
 
 	/**
@@ -155,8 +168,7 @@ class OCTK_Reporting {
 	 * per exact destination URL), so it never multiplies aggregate rows.
 	 */
 	private static function overrides_join_sql(): string {
-		$overrides = octk_table_overrides();
-		return "LEFT JOIN {$overrides} o ON o.destination_hash = l.destination_hash AND BINARY o.destination_url = BINARY l.destination_url";
+		return 'LEFT JOIN %i o ON o.destination_hash = l.destination_hash AND BINARY o.destination_url = BINARY l.destination_url';
 	}
 
 	/**
@@ -169,24 +181,15 @@ class OCTK_Reporting {
 	public static function export_rows( array $args, int $limit, int $offset ) {
 		global $wpdb;
 
-		$links  = octk_table_links();
-		$clicks = octk_table_clicks();
-
 		list( $where, $values ) = self::build_where( $args );
 
-		$orderby = self::ORDERBY[ $args['orderby'] ?? '' ] ?? 'clicks';
-		$order   = ( 'asc' === strtolower( $args['order'] ?? '' ) ) ? 'ASC' : 'DESC';
-		$limit   = max( 1, $limit );
-		$offset  = max( 0, $offset );
+		$limit  = max( 1, $limit );
+		$offset = max( 0, $offset );
 
-		$sql = self::row_select_sql( $where ) . ' LIMIT %d OFFSET %d';
-
+		$sql  = self::row_select_sql( $where, self::order_sql( $args ) );
 		$rows = $wpdb->get_results(
-			$wpdb->prepare(
-				// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $orderby/$order come from the ORDERBY/ORDER whitelists above, never from input.
-				str_replace( array( '{orderby}', '{order}' ), array( $orderby, $order ), $sql ),
-				array_merge( $values, array( $limit, $offset ) )
-			)
+			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $sql is placeholder-only SQL (row_select_sql); tables and values are prepared.
+			$wpdb->prepare( $sql, array_merge( self::join_tables(), $values, array( $limit, $offset ) ) )
 		);
 		if ( ! is_array( $rows ) ) {
 			octk_log( 'export query failed: ' . $wpdb->last_error );
@@ -203,19 +206,17 @@ class OCTK_Reporting {
 	public static function summary( array $args ) {
 		global $wpdb;
 
-		$links  = octk_table_links();
-		$clicks = octk_table_clicks();
-		$join   = self::overrides_join_sql();
+		$join = self::overrides_join_sql();
 
 		list( $where, $values ) = self::build_where( $args );
 
 		$row = $wpdb->get_row(
-			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $join / $where are placeholder-only fragments (overrides_join_sql, build_where); tables and values are prepared.
 			$wpdb->prepare(
 				"SELECT COALESCE(SUM(c.hits), 0) AS clicks, COUNT(DISTINCT c.link_id) AS identities,
 				COUNT(DISTINCT l.source_id) AS sources, MAX(c.bucket_start_utc) AS last_bucket
-				FROM {$clicks} c JOIN {$links} l ON l.id = c.link_id {$join} WHERE {$where}",
-				$values
+				FROM %i c JOIN %i l ON l.id = c.link_id {$join} WHERE {$where}",
+				array_merge( self::join_tables(), $values )
 			)
 		);
 		if ( ! is_object( $row ) ) {
@@ -236,7 +237,7 @@ class OCTK_Reporting {
 	public static function hosts(): array {
 		global $wpdb;
 		$links = octk_table_links();
-		$rows  = $wpdb->get_col( "SELECT DISTINCT destination_host FROM {$links} ORDER BY destination_host ASC LIMIT 200" );
+		$rows  = $wpdb->get_col( $wpdb->prepare( 'SELECT DISTINCT destination_host FROM %i ORDER BY destination_host ASC LIMIT 200', $links ) );
 		return is_array( $rows ) ? $rows : array();
 	}
 
@@ -256,9 +257,9 @@ class OCTK_Reporting {
 		$clicks = octk_table_clicks();
 
 		$counts = (object) array(
-			'links'       => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$links}" ),
-			'buckets'     => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$clicks}" ),
-			'last_bucket' => $wpdb->get_var( "SELECT MAX(bucket_start_utc) FROM {$clicks}" ),
+			'links'       => (int) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM %i', $links ) ),
+			'buckets'     => (int) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM %i', $clicks ) ),
+			'last_bucket' => $wpdb->get_var( $wpdb->prepare( 'SELECT MAX(bucket_start_utc) FROM %i', $clicks ) ),
 		);
 		set_transient( 'octk_status_counts', $counts, 5 * MINUTE_IN_SECONDS );
 		return $counts;

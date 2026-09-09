@@ -99,13 +99,15 @@ function octk_search_source_titles( string $needle ): array {
 	if ( empty( $types ) || empty( $tokens ) ) {
 		return array();
 	}
+	// Placeholder lists only: one %s per post type, one "<constant REPLACE()
+	// expression> LIKE %s" per search token. Every value is passed to prepare().
 	$placeholders = implode( ', ', array_fill( 0, count( $types ), '%s' ) );
 	$title_expr   = OCTK_Reporting::fold_sql( 'post_title' );
 	$token_where  = implode( ' AND ', array_fill( 0, count( $tokens ), "{$title_expr} LIKE %s" ) );
 	$likes        = array_map( static fn( $t ) => '%' . $wpdb->esc_like( $t ) . '%', $tokens );
 
 	$ids = $wpdb->get_col(
-		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- placeholders built above.
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $placeholders / $token_where are placeholder lists built above; all values are prepared.
 		$wpdb->prepare(
 			"SELECT ID FROM {$wpdb->posts}
 			WHERE post_status = 'publish' AND post_type IN ({$placeholders})

@@ -56,7 +56,8 @@ function octk_override_canonical_url( string $submitted ): ?string {
 
 	$links  = octk_table_links();
 	$stored = $wpdb->get_var( $wpdb->prepare(
-		"SELECT destination_url FROM {$links} WHERE destination_hash = UNHEX(%s) AND BINARY destination_url = BINARY %s LIMIT 1",
+		"SELECT destination_url FROM %i WHERE destination_hash = UNHEX(%s) AND BINARY destination_url = BINARY %s LIMIT 1",
+		$links,
 		hash( 'sha256', $submitted ),
 		$submitted
 	) );
@@ -73,7 +74,8 @@ function octk_override_list( int $limit = 200 ): array {
 	global $wpdb;
 	$table = octk_table_overrides();
 	$rows  = $wpdb->get_results( $wpdb->prepare(
-		"SELECT destination_url, label, updated_at_utc FROM {$table} ORDER BY updated_at_utc DESC, destination_url ASC LIMIT %d",
+		"SELECT destination_url, label, updated_at_utc FROM %i ORDER BY updated_at_utc DESC, destination_url ASC LIMIT %d",
+		$table,
 		$limit
 	) );
 	return is_array( $rows ) ? $rows : array();
@@ -86,7 +88,8 @@ function octk_override_get( string $canonical_url ): ?string {
 	global $wpdb;
 	$table = octk_table_overrides();
 	$label = $wpdb->get_var( $wpdb->prepare(
-		"SELECT label FROM {$table} WHERE destination_hash = UNHEX(%s) AND BINARY destination_url = BINARY %s",
+		"SELECT label FROM %i WHERE destination_hash = UNHEX(%s) AND BINARY destination_url = BINARY %s",
+		$table,
 		hash( 'sha256', $canonical_url ),
 		$canonical_url
 	) );
@@ -103,7 +106,8 @@ function octk_override_upsert( string $canonical_url, string $label ): bool {
 	$hash_hex = hash( 'sha256', $canonical_url );
 
 	$existing_url = $wpdb->get_var( $wpdb->prepare(
-		"SELECT destination_url FROM {$table} WHERE destination_hash = UNHEX(%s)",
+		"SELECT destination_url FROM %i WHERE destination_hash = UNHEX(%s)",
+		$table,
 		$hash_hex
 	) );
 	if ( is_string( $existing_url ) && $existing_url !== $canonical_url ) {
@@ -112,8 +116,9 @@ function octk_override_upsert( string $canonical_url, string $label ): bool {
 	}
 
 	$ok = $wpdb->query( $wpdb->prepare(
-		"INSERT INTO {$table} (destination_hash, destination_url, label, updated_at_utc) VALUES (UNHEX(%s), %s, %s, %s)
+		"INSERT INTO %i (destination_hash, destination_url, label, updated_at_utc) VALUES (UNHEX(%s), %s, %s, %s)
 		ON DUPLICATE KEY UPDATE label = VALUES(label), updated_at_utc = VALUES(updated_at_utc)",
+		$table,
 		$hash_hex,
 		$canonical_url,
 		$label,
@@ -132,7 +137,8 @@ function octk_override_delete( string $canonical_url ): bool {
 	global $wpdb;
 	$table = octk_table_overrides();
 	$ok    = $wpdb->query( $wpdb->prepare(
-		"DELETE FROM {$table} WHERE destination_hash = UNHEX(%s) AND BINARY destination_url = BINARY %s",
+		"DELETE FROM %i WHERE destination_hash = UNHEX(%s) AND BINARY destination_url = BINARY %s",
+		$table,
 		hash( 'sha256', $canonical_url ),
 		$canonical_url
 	) );
@@ -282,7 +288,8 @@ function octk_render_label_form( string $canonical ): void {
 		// Prefill with an auto label from any page carrying this destination.
 		$links   = octk_table_links();
 		$auto    = $wpdb->get_var( $wpdb->prepare(
-			"SELECT label FROM {$links} WHERE destination_hash = UNHEX(%s) AND BINARY destination_url = BINARY %s AND label IS NOT NULL LIMIT 1",
+			"SELECT label FROM %i WHERE destination_hash = UNHEX(%s) AND BINARY destination_url = BINARY %s AND label IS NOT NULL LIMIT 1",
+			$links,
 			hash( 'sha256', $canonical ),
 			$canonical
 		) );

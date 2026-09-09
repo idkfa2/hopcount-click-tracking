@@ -43,7 +43,8 @@ function octk_retention_run(): int {
 	for ( $i = 0; $i < OCTK_RETENTION_MAX_BATCHES; $i++ ) {
 		$result = $wpdb->query(
 			$wpdb->prepare(
-				"DELETE FROM {$clicks} WHERE bucket_start_utc < %s LIMIT %d",
+				'DELETE FROM %i WHERE bucket_start_utc < %s LIMIT %d',
+				$clicks,
 				$cutoff,
 				OCTK_RETENTION_BATCH
 			)

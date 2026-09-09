@@ -3,7 +3,7 @@ Contributors: aph5
 Tags: outbound links, affiliate, click tracking, analytics, privacy
 Requires at least: 6.5
 Tested up to: 7.1
-Stable tag: 1.1.0
+Stable tag: 1.1.1
 Requires PHP: 8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -108,6 +108,9 @@ Data is kept by default. Tick the option on the Settings screen if you want the 
 5. Dashboard widget with the top links for the selected period.
 
 == Changelog ==
+
+= 1.1.1 =
+* Every database query now passes table names through wpdb::prepare() (%i placeholders) and the report sort clause is chosen from a fixed list of complete ORDER BY strings. No behaviour change; addresses the WordPress.org plugin review feedback.
 
 = 1.1.0 =
 * Renamed to Hopcount Click Tracking (slug and text domain `hopcount-click-tracking`). Code prefix, hooks, tables, options and the REST route are unchanged, so existing data and site code carry over.
