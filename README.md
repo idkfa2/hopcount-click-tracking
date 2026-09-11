@@ -52,7 +52,7 @@ Most link-tracking plugins are redirectors: every click goes through your server
 
 There is nothing to anonymise and nothing to add to a privacy policy beyond "aggregate click counts are kept".
 
-The plugin has been submitted to the WordPress.org plugin directory and is awaiting review; until it is listed, install it from the [release zip](#installation).
+The plugin is listed in the [WordPress.org plugin directory](https://wordpress.org/plugins/hopcount-click-tracking/); install it from there or from a [release zip](#installation).
 
 ## Screenshots
 
@@ -83,6 +83,11 @@ Because tokens live in the rendered HTML, cached pages keep tracking without tou
 - Optional: a persistent object cache (for example Redis) if you enable the built-in rate limiter
 
 ## Installation
+
+**From WordPress.org**
+
+1. In wp-admin go to **Plugins > Add New** and search for "Hopcount Click Tracking".
+2. Install and activate.
 
 **From a release zip**
 
