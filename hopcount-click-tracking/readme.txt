@@ -3,7 +3,7 @@ Contributors: aph5
 Tags: outbound links, affiliate, click tracking, analytics, privacy
 Requires at least: 6.5
 Tested up to: 7.1
-Stable tag: 1.1.1
+Stable tag: 1.2.0
 Requires PHP: 8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -12,7 +12,7 @@ Counts clicks on outbound and affiliate links without redirects, cookies, per-cl
 
 == Description ==
 
-Hopcount Click Tracking records how often visitors click the outbound and affiliate links in your posts and pages, and shows the totals in wp-admin. It does this without redirecting or cloaking anything: your links keep their real destination URLs, which search engines and affiliate programme terms both prefer.
+Hopcount Click Tracking records how often visitors click the outbound and affiliate links in your posts and pages, and shows the totals in wp-admin. It does this without redirecting or cloaking anything: your links keep their real href. If you already use cloaked links on your own site (Redirection, Pretty Links, ThirstyAffiliates, a server rule), those are followed and counted under their real destination too, best-effort.
 
 **What it stores**
 
@@ -23,7 +23,7 @@ There is nothing to anonymise and nothing to disclose in a privacy policy beyond
 
 **How it works**
 
-1. When a post renders, eligible outbound links get a short server-generated token attribute. Links to your own site (and any hosts you list as internal) are skipped.
+1. When a post renders, eligible outbound links get a short server-generated token attribute. Ordinary links to your own site (and any hosts you list as internal) are skipped. A same-site link that your site answers with an off-site redirect (a cloaked affiliate link) is treated as outbound and tracked under the redirect's destination.
 2. A small deferred script (about 700 bytes compressed) sends a beacon to a REST endpoint when a link is activated, including middle-click and keyboard activation.
 3. The endpoint resolves the token and increments the hourly counter.
 
@@ -80,6 +80,14 @@ No. Links keep their original href. The plugin only adds a data attribute at ren
 
 Any link in post or page content whose host is not your site (including its www and non-www forms) and not in your internal-hosts list. Links elsewhere in the theme (menus, widgets, footers) are not tracked.
 
+= I use cloaked links like /go/product or /recommends/product. Are they counted? =
+
+Yes, since 1.2.0. The plugin sends a small signed request for each same-site link to your own server, with redirects disabled, and reads the answer. If the answer is a redirect to another host, the link is tracked under that destination, exactly like a link written out in full, so the host filter, labels and grouping all work. If the answer is a normal page, a 404 or an on-site redirect, the link stays untracked. Redirects made by Redirection, Pretty Links, ThirstyAffiliates, your web server or your host all look the same to this check. Answers are kept in a small table and re-checked about once a week by WP-Cron. It is best-effort: redirects that depend on cookies, geography or the request method are not seen, and redirect rules applied at a CDN in front of your origin are not visible to it.
+
+= Will the redirect check slow my site down or overload the server? =
+
+No. Work is bounded by content, not by traffic: one row per distinct same-site link, checked about once a week. An uncached page view checks at most three never-seen links with a three-second budget; everything else is done by cron in small batches. Any transport error pauses all checks for an hour, there is a daily cap of 10,000 requests, and the Status screen shows the state. Fully cached page views never touch it. To turn the feature off entirely, define the constant `OCTK_DISABLE_RESOLVE` as true or return false from the `octk_resolve_enabled` filter; behaviour then matches 1.1.x.
+
 = Which users are tracked? =
 
 Visitors and logged-in users whose role is not in the excluded-roles list (administrators and editors by default).
@@ -108,6 +116,12 @@ Data is kept by default. Tick the option on the Settings screen if you want the 
 5. Dashboard widget with the top links for the selected period.
 
 == Changelog ==
+
+= 1.2.0 =
+* Cloaked links on your own site (for example /go/product or /recommends/product created by Redirection, Pretty Links, ThirstyAffiliates or a server rule) are now tracked under their real destination. The plugin asks your own server where the link goes, with a signed request that never renders a page, and records the answer in two new tables (schema version 3). Answers are refreshed weekly by WP-Cron and are bounded by a per-render budget, a per-run budget, a daily cap and a circuit breaker.
+* Status screen: new rows for the resolution state, counts, probes today, the probe route and the cron, plus a "Clear resolution cache" button.
+* New filters `octk_resolve_enabled`, `octk_pre_resolve_same_site`, `octk_resolve_ttl`, `octk_resolve_daily_cap`, `octk_resolve_probe_origin`, `octk_resolve_probe_sslverify`; new action `octk_resolution_changed`; new constant `OCTK_DISABLE_RESOLVE`.
+* Frontend output changes on pages that contain cloaked links, so purge your page cache after updating.
 
 = 1.1.1 =
 * Every database query now passes table names through wpdb::prepare() (%i placeholders) and the report sort clause is chosen from a fixed list of complete ORDER BY strings. No behaviour change; addresses the WordPress.org plugin review feedback.
@@ -138,6 +152,9 @@ Data is kept by default. Tick the option on the Settings screen if you want the 
 * Initial private releases: token annotation, beacon listener, REST endpoint, hourly aggregates, Report, Labels, Settings and Status screens, dashboard widget, retention, rate limiter, CSV export.
 
 == Upgrade Notice ==
+
+= 1.2.0 =
+Cloaked same-site links are now tracked under their real destination. Adds two tables and a WP-Cron job; purge your page cache after updating so the new tokens appear.
 
 = 1.1.0 =
 Plugin folder renamed to hopcount-click-tracking. Deactivate the old folder, upload the new one, activate. Data and settings are preserved.

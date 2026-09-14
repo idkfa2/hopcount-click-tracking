@@ -3,7 +3,7 @@
  * Plugin Name: Hopcount Click Tracking
  * Plugin URI: https://github.com/idkfa2/hopcount-click-tracking
  * Description: Privacy-friendly outbound and affiliate click tracking. Server-side link pre-registration, token-only click endpoint, hourly aggregate counts, no cookies or per-click rows.
- * Version: 1.1.1
+ * Version: 1.2.0
  * Requires at least: 6.5
  * Requires PHP: 8.0
  * Author: aph5
@@ -17,13 +17,14 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'OCTK_VERSION', '1.1.1' );
+define( 'OCTK_VERSION', '1.2.0' );
 define( 'OCTK_PLUGIN_FILE', __FILE__ );
 define( 'OCTK_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 
 require OCTK_PLUGIN_DIR . 'includes/options.php';
 require OCTK_PLUGIN_DIR . 'includes/schema.php';
 require OCTK_PLUGIN_DIR . 'includes/url.php';
+require OCTK_PLUGIN_DIR . 'includes/resolve.php';
 require OCTK_PLUGIN_DIR . 'includes/identity.php';
 require OCTK_PLUGIN_DIR . 'includes/registration.php';
 require OCTK_PLUGIN_DIR . 'includes/labels.php';
@@ -50,14 +51,21 @@ register_activation_hook( __FILE__, static function () {
 	octk_migrate();
 	add_option( 'octk_enabled', '1' );
 	octk_schedule_retention();
+	octk_resolve_ensure_secret();
+	octk_schedule_resolve();
 } );
 
-register_deactivation_hook( __FILE__, 'octk_unschedule_retention' );
+register_deactivation_hook( __FILE__, static function () {
+	octk_unschedule_retention();
+	octk_unschedule_resolve();
+} );
 
 add_action( 'plugins_loaded', static function () {
 	octk_migrate();             // Idempotent; covers upgrades without reactivation.
 	octk_schedule_retention();  // Same: activation alone misses upgrade installs.
+	octk_schedule_resolve();
 	octk_register_render_hooks();
+	octk_register_resolve_hooks();
 } );
 
 add_action( 'rest_api_init', 'octk_register_rest_routes' );

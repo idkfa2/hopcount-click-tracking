@@ -55,6 +55,11 @@ function octk_filter_content( $content ) {
 			return $content;
 		}
 
+		// Same-site redirect resolution (resolve.php): discover cloak
+		// candidates in the rendered HTML and probe never-confirmed ones
+		// within a small budget, so pass 1 and pass 2 see the same answers.
+		octk_resolve_prepare_render( $content, $source_id );
+
 		// Pass 1: collect eligible destinations + their label candidates
 		// (anchor text / aria-label / img alt) in one token walk.
 		$destinations = octk_collect_destinations( $content );

@@ -17,21 +17,7 @@ const OCTK_MAX_HOST_BYTES = 255;
  * @return string[]
  */
 function octk_internal_hosts(): array {
-	$hosts = array();
-
-	foreach ( array( home_url(), site_url() ) as $url ) {
-		$host = wp_parse_url( $url, PHP_URL_HOST );
-		if ( ! is_string( $host ) || '' === $host ) {
-			continue;
-		}
-		$host    = strtolower( $host );
-		$hosts[] = $host;
-		if ( str_starts_with( $host, 'www.' ) ) {
-			$hosts[] = substr( $host, 4 );
-		} else {
-			$hosts[] = 'www.' . $host;
-		}
-	}
+	$hosts = octk_site_hosts();
 
 	$extra = get_option( 'octk_internal_hosts', array() );
 	if ( is_array( $extra ) ) {
@@ -53,6 +39,20 @@ function octk_internal_hosts(): array {
  * malformed, over-limit). Over-limit URLs are skipped entirely, never truncated.
  */
 function octk_normalize_destination( string $raw ): ?array {
+	$external = octk_normalize_external( $raw );
+	if ( null !== $external ) {
+		return $external;
+	}
+	// Same-site hrefs (relative, or on the home/site host) may be cloaked
+	// redirects: consult the resolution table (read-only). See resolve.php.
+	return function_exists( 'octk_resolve_lookup' ) ? octk_resolve_lookup( $raw ) : null;
+}
+
+/**
+ * The pure external normaliser: same contract as octk_normalize_destination()
+ * but never consults the same-site resolution table.
+ */
+function octk_normalize_external( string $raw ): ?array {
 	$raw = trim( $raw );
 	if ( '' === $raw || strlen( $raw ) > OCTK_MAX_URL_BYTES ) {
 		return null;

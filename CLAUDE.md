@@ -7,7 +7,7 @@ Site-specific deployment material is not part of this repo; a gitignored `local/
 ## Layout
 
 - `hopcount-click-tracking/` - **the plugin. Only this folder is ever deployed.**
-- `tests/` - PHPUnit suite (runs inside wp-env tests container); 141 tests / 660 assertions
+- `tests/` - PHPUnit suite (runs inside wp-env tests container); 184 tests / 1079 assertions
 - `wp-org-assets/` - banner/icon/screenshots for the wp.org SVN `assets/` dir (not part of the plugin)
 - `README.md` - user-facing docs (install, settings, filters); `CHANGELOG.md` - release notes
 
@@ -25,11 +25,12 @@ Code comments cite "decision N" and "scope §N": these refer to the original des
 
 At render time a filter (priority 50, filterable) annotates eligible outbound links in singular post content with a server-generated `data-octk-token` (covers Classic, Gutenberg, custom HTML, and Shortcoder-emitted links; internal hosts skipped; fail-soft - rendering is never broken by tracking failures). A small deferred listener (~690 bytes gzipped, click/auxclick/keyboard) fires `sendBeacon` (fetch-keepalive fallback) to the public REST endpoint `POST /wp-json/octk/v1/click`, which resolves the token and atomically increments a bounded hourly aggregate - no per-click rows, no PII, no cookies. Survives full-page caching (WP Rocket, Cloudflare APO, etc.) by construction: tokens live in the cached HTML; cached hits do zero registration queries.
 
-## Data model (schema v2)
+## Data model (schema v3)
 
 - `{prefix}octk_links` - one row per (source, destination) identity: source_type/source_id, destination_url + host, token, auto-captured `label` (anchor text), destination_hash
 - `{prefix}octk_clicks_hourly` - aggregate counts per link per UTC hour bucket
 - `{prefix}octk_label_overrides` - manual labels per exact destination URL (win over auto labels)
+- `{prefix}octk_redirects` + `{prefix}octk_redirect_sources` (v3, 1.2.0) - verdicts for cloaked same-site links (`/go/x`) found by signed `HEAD` probes against the site's own origin, and which posts reference them. Logic in `includes/resolve.php`; design notes in `local/archive/TEMP-cloaked-links-plan.md`. Kill switch `OCTK_DISABLE_RESOLVE`.
 
 Retention: daily cron prunes hourly rows past the configured window (default 24 months, clamp 1-120). Uninstall preserves data by default (opt-in drop in Settings). Migrations run on plugin load; activation is idempotent (tables + retention cron).
 

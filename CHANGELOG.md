@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.0 - 2026-09-14
+
+- Cloaked same-site links (`/go/product`, `/recommends/product`, bare `/product-name` created by Redirection, Pretty Links, ThirstyAffiliates or a server rule) are now tracked under their real destination. The plugin asks its own server where each same-site link goes with a signed `HEAD` request that never renders a page, and stores the answer in two new tables, `octk_redirects` and `octk_redirect_sources` (schema version 3). Discovery happens at render, on save and by an upgrade backfill; answers are refreshed weekly by WP-Cron with backoff for errors. A changed destination purges the referencing posts (post cache, WP Rocket) and fires `octk_resolution_changed`.
+- Probes reach the origin directly when a signed self-test proves a route (explicit filter, `SERVER_ADDR`, loopback), so no CDN or page cache ever sees one; otherwise the public URL is used and the origin renders the page with the resolver off and `DONOTCACHEPAGE` set. Unsigned or invalid probe headers are ignored entirely.
+- Ceilings: 3 probes and 3 s per uncached render (never-seen links only), 20 probes or 20 s per cron run, a 10,000-request daily cap, a one-hour circuit breaker after any transport error, a 3-hop limit. Kill switch: `OCTK_DISABLE_RESOLVE` or filter `octk_resolve_enabled`.
+- Status screen: resolution state, counts by verdict, probes today, probe route and cron rows, plus a "Clear resolution cache" button (bumps the generation and rotates the signing secret; verdicts keep serving until re-confirmed).
+- New filters `octk_resolve_enabled`, `octk_pre_resolve_same_site`, `octk_resolve_ttl`, `octk_resolve_daily_cap`, `octk_resolve_probe_origin`, `octk_resolve_probe_sslverify`; new action `octk_resolution_changed`; new public REST route `GET /wp-json/octk/v1/probe-selftest` (404 unless signed).
+- Frontend output changes on pages that contain cloaked links: purge the page cache after updating.
+
 ## 1.1.1 - 2026-09-09
 
 - Every SQL statement, including schema migrations, legacy adoption (RENAME/DROP), status counts and the report queries, now goes through `wpdb::prepare()` with `%i` identifier placeholders for table names. The report sort is chosen by array lookup from four complete `ORDER BY` literals instead of substituting whitelisted fragments into the query. No behaviour change; addresses the WordPress.org plugin review (unsafe SQL calls, review R hopcount-click-tracking/aph5/31Aug26/T2 9Sep26).

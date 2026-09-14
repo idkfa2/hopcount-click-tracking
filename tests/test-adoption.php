@@ -171,7 +171,7 @@ class OCTK_Adoption_Test extends WP_UnitTestCase {
 			$this->assertSame( $value, get_option( 'octk_' . $key ), $key );
 			$this->assertFalse( get_option( 'flhct_' . $key ), "flhct_{$key} deleted" );
 		}
-		$this->assertSame( 2, (int) get_option( 'octk_schema_version' ) );
+		$this->assertSame( OCTK_SCHEMA_VERSION, (int) get_option( 'octk_schema_version' ) );
 		$this->assertFalse( get_option( 'flhct_schema_version' ) );
 		$this->assertFalse( wp_next_scheduled( OCTK_LEGACY_CRON ) );
 		$this->assertFalse( get_transient( 'flhct_status_counts' ) );
@@ -188,7 +188,7 @@ class OCTK_Adoption_Test extends WP_UnitTestCase {
 		update_option( 'octk_enabled', '0' );
 		octk_migrate();
 		$this->assertSame( '0', get_option( 'octk_enabled' ) );
-		$this->assertSame( 2, (int) get_option( 'octk_schema_version' ) );
+		$this->assertSame( OCTK_SCHEMA_VERSION, (int) get_option( 'octk_schema_version' ) );
 		$this->assertSame( 1, $this->rows( 'octk', 'links' ) );
 	}
 
@@ -198,7 +198,7 @@ class OCTK_Adoption_Test extends WP_UnitTestCase {
 
 		octk_migrate();
 
-		$this->assertSame( 2, (int) get_option( 'octk_schema_version' ) );
+		$this->assertSame( OCTK_SCHEMA_VERSION, (int) get_option( 'octk_schema_version' ) );
 		$this->assertSame( 1, $this->rows( 'octk', 'clicks_hourly' ) );
 		$this->assertTrue( octk_base_table_exists( octk_table_overrides() ), 'migration 2 created the overrides table' );
 		$this->assertFalse( octk_base_table_exists( "{$wpdb->prefix}flhct_label_overrides" ) );
@@ -236,7 +236,7 @@ class OCTK_Adoption_Test extends WP_UnitTestCase {
 			$this->assertFalse( octk_base_table_exists( "{$wpdb->prefix}flhct_{$suffix}" ) );
 			$this->assertSame( 1, $this->rows( 'octk', $suffix ), 'real data kept' );
 		}
-		$this->assertSame( 2, (int) get_option( 'octk_schema_version' ) );
+		$this->assertSame( OCTK_SCHEMA_VERSION, (int) get_option( 'octk_schema_version' ) );
 	}
 
 	public function test_refuses_on_malformed_overrides_table() {
@@ -281,7 +281,7 @@ class OCTK_Adoption_Test extends WP_UnitTestCase {
 
 		octk_migrate();
 		$this->assertSame( 7, get_option( 'octk_retention_months' ) );
-		$this->assertSame( 2, (int) get_option( 'octk_schema_version' ) );
+		$this->assertSame( OCTK_SCHEMA_VERSION, (int) get_option( 'octk_schema_version' ) );
 	}
 
 	public function test_cron_clear_failure_retries() {
@@ -297,7 +297,7 @@ class OCTK_Adoption_Test extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'cron', get_transient( OCTK_ADOPT_ERROR ) );
 
 		octk_migrate();
-		$this->assertSame( 2, (int) get_option( 'octk_schema_version' ) );
+		$this->assertSame( OCTK_SCHEMA_VERSION, (int) get_option( 'octk_schema_version' ) );
 		$this->assertFalse( wp_next_scheduled( OCTK_LEGACY_CRON ) );
 	}
 
@@ -316,7 +316,7 @@ class OCTK_Adoption_Test extends WP_UnitTestCase {
 
 		octk_migrate();
 		$this->assertSame( '30', get_user_meta( $this->user_id, 'octk_dashboard_days', true ) );
-		$this->assertSame( 2, (int) get_option( 'octk_schema_version' ) );
+		$this->assertSame( OCTK_SCHEMA_VERSION, (int) get_option( 'octk_schema_version' ) );
 	}
 
 	public function test_refuses_when_required_table_missing_everywhere() {
@@ -341,7 +341,7 @@ class OCTK_Adoption_Test extends WP_UnitTestCase {
 		} finally {
 			remove_filter( 'option_active_plugins', $inject );
 		}
-		$this->assertSame( 2, (int) get_option( 'octk_schema_version' ), 'entry without plugin files must not block adoption' );
+		$this->assertSame( OCTK_SCHEMA_VERSION, (int) get_option( 'octk_schema_version' ), 'entry without plugin files must not block adoption' );
 	}
 
 	public function test_refuses_while_old_plugin_active() {
@@ -358,7 +358,7 @@ class OCTK_Adoption_Test extends WP_UnitTestCase {
 		}
 		// Deactivating the old plugin lets the next load complete.
 		octk_migrate();
-		$this->assertSame( 2, (int) get_option( 'octk_schema_version' ) );
+		$this->assertSame( OCTK_SCHEMA_VERSION, (int) get_option( 'octk_schema_version' ) );
 	}
 
 	public function test_resumes_after_interruption_between_rename_and_options() {
@@ -369,7 +369,7 @@ class OCTK_Adoption_Test extends WP_UnitTestCase {
 
 		octk_migrate();
 
-		$this->assertSame( 2, (int) get_option( 'octk_schema_version' ) );
+		$this->assertSame( OCTK_SCHEMA_VERSION, (int) get_option( 'octk_schema_version' ) );
 		$this->assertFalse( get_option( 'flhct_schema_version' ) );
 		$this->assertSame( '0', get_option( 'octk_enabled' ) );
 		$this->assertSame( array( 'administrator', 'author' ), get_option( 'octk_excluded_roles' ) );
@@ -414,7 +414,7 @@ class OCTK_Adoption_Test extends WP_UnitTestCase {
 		delete_option( 'octk_schema_version' );
 		$this->assertFalse( octk_adoption_pending() );
 		octk_migrate();
-		$this->assertSame( 2, (int) get_option( 'octk_schema_version' ) );
+		$this->assertSame( OCTK_SCHEMA_VERSION, (int) get_option( 'octk_schema_version' ) );
 		$this->assertTrue( octk_tables_exist() );
 		$this->assertFalse( get_transient( OCTK_ADOPT_ERROR ) );
 	}

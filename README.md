@@ -70,11 +70,40 @@ The plugin is listed in the [WordPress.org plugin directory](https://wordpress.o
 
 ## How it works
 
-1. **Annotate at render time.** When a single post or page renders, a content filter (priority 50, filterable) adds a server-generated `data-octk-token` to every eligible outbound link. Links to your own site (and any hosts you list as internal) are skipped. Classic editor, Gutenberg, custom HTML and shortcode-emitted links are all covered. Failures never break rendering.
+1. **Annotate at render time.** When a single post or page renders, a content filter (priority 50, filterable) adds a server-generated `data-octk-token` to every eligible outbound link. Ordinary links to your own site (and any hosts you list as internal) are skipped; cloaked same-site links that redirect off-site are resolved and tracked under their destination (see [Cloaked links](#cloaked-links)). Classic editor, Gutenberg, custom HTML and shortcode-emitted links are all covered. Failures never break rendering.
 2. **Beacon on activation.** A small deferred listener (about 700 bytes gzipped) watches for click and auxclick (keyboard activation of a link fires a native click event, so it is covered too) and sends `navigator.sendBeacon` (fetch keepalive fallback) to `POST /wp-json/octk/v1/click`.
 3. **Count.** The endpoint resolves the token and atomically increments an hourly aggregate. Unknown or malformed tokens are rejected cheaply, and nothing on the public side can write link metadata.
 
 Because tokens live in the rendered HTML, cached pages keep tracking without touching the database. WP Rocket, WP Super Cache, W3 Total Cache, Cloudflare APO and similar all work with no special configuration.
+
+### Cloaked links
+
+Many sites write affiliate links as `/go/product`, `/recommends/product` or a bare `/product-name` and let Redirection, Pretty Links, ThirstyAffiliates, an nginx rule or an htaccess rule send the visitor on to the merchant. Such a link looks internal, so before 1.2.0 it was never tracked. Since 1.2.0 the plugin does not read any redirect plugin's rule table; it asks the site itself:
+
+1. Each distinct same-site link found in content gets a row in `octk_redirects` (pending) and a `(link, post)` pair in `octk_redirect_sources`.
+2. A signed `HEAD` request for that path is sent to the site's own server with redirects disabled. The connection goes straight to the origin address when one can be verified (see below), so no CDN or page cache ever sees a probe. An off-site `Location` makes the link **outbound** and it is tracked under that destination, exactly like a link written out in full. On-site redirects are followed up to three hops. A normal page, a 404 or an on-site chain that never leaves makes it **internal**. Errors leave it **unknown** and it is retried later with backoff.
+3. Answers are refreshed by WP-Cron: every seven days for confirmed rows, hourly (doubling to daily) for unknown ones. When a destination changes, the referencing posts are purged from the post cache and WP Rocket, and `octk_resolution_changed` fires so other caches can be purged too.
+
+A probe never renders a page. Signed probes reaching the origin from the server's own address get an empty 204 marked `no-store`; any other signed probe gets a full page with the resolver off and `DONOTCACHEPAGE` set. Unsigned or invalid headers are ignored entirely, so nothing a visitor can send changes what is served.
+
+**Origin route.** The plugin looks for a way to reach its own origin directly: an explicit `octk_resolve_probe_origin` filter first, then `https` and `http` to `SERVER_ADDR`, then loopback. A candidate is used only after a signed self-test proves it reaches this very WordPress install. The last candidate is `https` to `127.0.0.1:443` without certificate verification, for backends that terminate TLS with a certificate that is not publicly trusted (a Cloudflare origin certificate, for example); loopback traffic never leaves the machine. Status shows the route in use, or "using public URL" when none passed.
+
+**Limits.** At most 3 probes and 3 seconds per uncached page view, and only for links never seen before; at most 20 probes or 20 seconds per cron run; a daily cap of 10,000 requests (every hop counts); a one-hour circuit breaker after any transport error; a hop limit of 3. Work is bounded by content, not traffic: a site with 50,000 same-site links fits the daily cap with room to spare, and a fully cached page view never touches the resolver. The Status screen reports the state, counts, probes today and the route, and has a "Clear resolution cache" button that re-checks everything (verdicts keep serving until re-confirmed).
+
+**Turning it off.** Define `OCTK_DISABLE_RESOLVE` as `true` in `wp-config.php`, or `add_filter( 'octk_resolve_enabled', '__return_false' );`. Behaviour then matches 1.1.x and the tables are left in place.
+
+**Site code hooks.** `octk_pre_resolve_same_site` lets a site plugin answer for a URL without any HTTP request, for redirects that live at a CDN in front of the origin:
+
+```php
+add_filter( 'octk_pre_resolve_same_site', function ( $pre, string $url ) {
+    if ( str_starts_with( $url, home_url( '/go/' ) ) ) {
+        return array( 'verdict' => 'outbound', 'destination_url' => my_lookup( $url ) );
+    }
+    return $pre; // null = not handled, probe as normal
+}, 10, 2 );
+```
+
+Best-effort: the probe is an anonymous server-side `HEAD`, so redirects that depend on cookies, geography or method are not seen, and rules applied at a CDN are invisible unless answered through the filter above.
 
 ## Requirements
 
@@ -134,6 +163,14 @@ Links are registered the first time a post renders uncached, so if you run a pag
 | `octk_generic_anchor_texts` | built-in list | Anchor texts ("click here", "buy now", ...) not used as auto labels. |
 | `octk_public_token_hex` | generated | Override token generation. |
 | `octk_migrations` | built-in | Extend the schema migration list. |
+| `octk_resolve_enabled` | `true` | Turn same-site redirect resolution off (also the `OCTK_DISABLE_RESOLVE` constant). |
+| `octk_pre_resolve_same_site` | `null` | Answer for a same-site URL without a probe: `array( 'verdict' => 'outbound', 'destination_url' => ... )` or `array( 'verdict' => 'internal' )`. |
+| `octk_resolve_ttl` | 7 days / backoff | Seconds until a row is re-checked, given the verdict and attempt count. |
+| `octk_resolve_daily_cap` | `10000` | Maximum probe requests per UTC day. |
+| `octk_resolve_probe_origin` | `null` | Explicit origin route `array( 'scheme' => 'http', 'host' => '10.0.0.5', 'port' => 80 )`, tried first. |
+| `octk_resolve_probe_sslverify` | `true` | Verify the origin certificate on `https` origin candidates. |
+
+Action: `octk_resolution_changed( string $url, array $old, array $new, int[] $post_ids )` fires when a same-site link's tracked destination changes, after the post cache and WP Rocket have been purged, so CDN purges can hook in.
 
 Example: let editors and authors see reports and manage labels.
 
@@ -144,13 +181,15 @@ add_filter( 'octk_label_capability', fn() => 'edit_published_posts' );
 
 ## Data model and privacy
 
-Three tables under your database prefix:
+Five tables under your database prefix:
 
 | Table | Contents |
 |---|---|
 | `octk_links` | One row per (source post, destination URL): token, destination host, auto-captured label, destination hash. |
 | `octk_clicks_hourly` | Click counts per link per UTC hour. |
 | `octk_label_overrides` | Manual labels per exact destination URL. |
+| `octk_redirects` | One row per distinct same-site link: verdict (pending, outbound, internal, unknown), resolved destination, check times, claim and generation bookkeeping. |
+| `octk_redirect_sources` | Which posts reference each same-site link, for cache purges when a destination changes. |
 
 No IP addresses, user agents, referrers, user IDs or cookies are stored. The optional rate limiter keeps a short-lived per-IP counter in your object cache only and never writes it to the database. Uninstall keeps your data unless you opt in to deletion.
 
@@ -172,6 +211,9 @@ The endpoint is public by design (it has to work from cached pages), so anyone c
 
 **Does it change my links or redirect visitors?**
 No. Links keep their original `href`; the plugin only adds a data attribute at render time.
+
+**Are cloaked links like `/go/product` counted?**
+Yes, since 1.2.0, under their real destination. See [Cloaked links](#cloaked-links).
 
 **What counts as an outbound link?**
 Any link in post or page content whose host is not your site (including its www and non-www forms) and not in your internal-hosts list. Links elsewhere in the theme (menus, widgets, footers) are not tracked.

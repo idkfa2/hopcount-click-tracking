@@ -655,6 +655,14 @@ function octk_render_status_page(): void {
 	$route_ok  = isset( $routes['/octk/v1/click'] );
 	$rl_active = octk_rate_limit_enabled() && wp_using_ext_object_cache();
 	$v2_ok     = octk_schema_v2_ready();
+	$v3_ok     = octk_schema_v3_ready();
+
+	// Origin route discovery runs from here or from cron, never from render.
+	if ( octk_resolve_enabled() && null === octk_probe_origin() ) {
+		octk_probe_origin_ensure();
+	}
+	$resolve      = octk_resolve_status();
+	$resolve_next = wp_next_scheduled( OCTK_RESOLVE_HOOK );
 
 	// state: ok (green) / warn (amber) / info (neutral fact).
 	$rows = array(
@@ -701,6 +709,44 @@ function octk_render_status_page(): void {
 				? sprintf( __( 'Built-in limiter active (%d/min per IP, fail-open)', 'hopcount-click-tracking' ), (int) octk_rate_limit_per_minute() )
 				: ( octk_rate_limit_enabled() ? __( 'Enabled but inactive - no persistent object cache (fail-open)', 'hopcount-click-tracking' ) : __( 'Allow-all default (put a CDN/WAF rate limit in front)', 'hopcount-click-tracking' ) ),
 		),
+		array( $v3_ok ? 'ok' : 'warn', __( 'Redirect schema (v3 objects)', 'hopcount-click-tracking' ), $v3_ok ? __( 'Present', 'hopcount-click-tracking' ) : __( 'Missing - needs attention', 'hopcount-click-tracking' ) ),
+		array(
+			in_array( $resolve['state'], array( 'working', 'disabled' ), true ) ? ( 'working' === $resolve['state'] ? 'ok' : 'info' ) : 'warn',
+			__( 'Same-site redirect resolution', 'hopcount-click-tracking' ),
+			$resolve['detail'],
+		),
+		array(
+			'info',
+			__( 'Resolved same-site links', 'hopcount-click-tracking' ),
+			sprintf(
+				/* translators: 1: outbound count, 2: internal count, 3: pending count, 4: unknown count, 5: rows due for a check. */
+				__( '%1$s outbound, %2$s internal, %3$s pending, %4$s unknown; %5$s due', 'hopcount-click-tracking' ),
+				number_format_i18n( $resolve['counts']['outbound'] ),
+				number_format_i18n( $resolve['counts']['internal'] ),
+				number_format_i18n( $resolve['counts']['pending'] ),
+				number_format_i18n( $resolve['counts']['unknown'] ),
+				number_format_i18n( $resolve['due'] )
+			),
+		),
+		array(
+			'info',
+			__( 'Probes today', 'hopcount-click-tracking' ),
+			/* translators: 1: probes made today, 2: daily cap. */
+			sprintf( __( '%1$s of %2$s', 'hopcount-click-tracking' ), number_format_i18n( $resolve['today'] ), number_format_i18n( $resolve['cap'] ) ),
+		),
+		array( 'info', __( 'Probe route', 'hopcount-click-tracking' ), $resolve['origin'] ),
+		array(
+			$resolve_next ? 'ok' : ( 'disabled' === $resolve['state'] ? 'info' : 'warn' ),
+			__( 'Redirect resolution cron', 'hopcount-click-tracking' ),
+			$resolve_next
+				? sprintf(
+					/* translators: 1: next scheduled run, 2: last run or "never". */
+					__( 'Scheduled; next run %1$s; last run %2$s', 'hopcount-click-tracking' ),
+					octk_format_bucket( gmdate( 'Y-m-d H:i:s', $resolve_next ) ),
+					$resolve['last_run'] ? octk_format_bucket( gmdate( 'Y-m-d H:i:s', $resolve['last_run'] ) ) : __( 'never', 'hopcount-click-tracking' )
+				)
+				: __( 'Not scheduled - needs attention', 'hopcount-click-tracking' ),
+		),
 		array( 'info', __( 'WordPress', 'hopcount-click-tracking' ), get_bloginfo( 'version' ) ),
 		array( 'info', __( 'PHP', 'hopcount-click-tracking' ), PHP_VERSION ),
 		array( 'info', __( 'Database', 'hopcount-click-tracking' ), $wpdb->db_version() ),
@@ -718,5 +764,26 @@ function octk_render_status_page(): void {
 			esc_html( $row[2] )
 		);
 	}
-	echo '</tbody></table></div>';
+	echo '</tbody></table>';
+
+	if ( isset( $_GET['octk_cleared'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- display-only flag after a nonce-checked action.
+		echo '<div class="notice notice-success inline"><p>' . esc_html__( 'Resolution cache cleared. Every same-site link will be re-checked by the next cron runs; current answers keep serving until then.', 'hopcount-click-tracking' ) . '</p></div>';
+	}
+	echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" style="margin-top:16px;">';
+	echo '<input type="hidden" name="action" value="octk_resolve_clear" />';
+	wp_nonce_field( 'octk_resolve_clear' );
+	submit_button( __( 'Clear resolution cache', 'hopcount-click-tracking' ), 'secondary', 'submit', false );
+	echo ' <span class="description">' . esc_html__( 'Marks every same-site link for a fresh redirect check and rotates the probe signing secret. Use after changing redirect rules in bulk.', 'hopcount-click-tracking' ) . '</span>';
+	echo '</form></div>';
+}
+
+add_action( 'admin_post_octk_resolve_clear', 'octk_handle_resolve_clear' );
+function octk_handle_resolve_clear(): void {
+	if ( ! current_user_can( 'manage_options' ) ) {
+		wp_die( esc_html__( 'Sorry, you are not allowed to do that.', 'hopcount-click-tracking' ) );
+	}
+	check_admin_referer( 'octk_resolve_clear' );
+	octk_resolve_clear();
+	wp_safe_redirect( add_query_arg( array( 'page' => 'octk-status', 'octk_cleared' => '1' ), admin_url( 'admin.php' ) ) );
+	exit;
 }

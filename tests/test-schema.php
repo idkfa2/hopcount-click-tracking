@@ -7,11 +7,12 @@ class OCTK_Schema_Test extends WP_UnitTestCase {
 		// Tests that run migrations get their CREATE TABLE rewritten to
 		// CREATE TEMPORARY TABLE by the WP test framework, leaving temp
 		// shadow tables on the connection. Drop them (base tables untouched).
-		$wpdb->query( 'DROP TEMPORARY TABLE IF EXISTS ' . octk_table_links() . ', ' . octk_table_clicks() . ', ' . octk_table_overrides() );
+		$wpdb->query( 'DROP TEMPORARY TABLE IF EXISTS ' . octk_table_links() . ', ' . octk_table_clicks() . ', ' . octk_table_overrides() . ', ' . octk_table_redirects() . ', ' . octk_table_redirect_sources() );
 		// Every test must leave the real schema installed for the rest of the suite.
 		update_option( 'octk_schema_version', OCTK_SCHEMA_VERSION, true );
 		$this->assertTrue( octk_tables_exist() );
 		$this->assertTrue( octk_schema_v2_ready( true ) );
+		$this->assertTrue( octk_schema_v3_ready( true ) );
 		parent::tear_down();
 	}
 

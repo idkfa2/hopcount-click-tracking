@@ -9,7 +9,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-const OCTK_SCHEMA_VERSION = 2;
+const OCTK_SCHEMA_VERSION = 3;
 
 function octk_table_links(): string {
 	global $wpdb;
@@ -246,6 +246,7 @@ function octk_migrate(): void {
 	$migrations = array(
 		1 => 'octk_migration_1',
 		2 => 'octk_migration_2',
+		3 => 'octk_migration_3',
 	);
 	// Test seam: lets fixtures exercise the failure path without mocking $wpdb.
 	$migrations = apply_filters( 'octk_migrations', $migrations );
