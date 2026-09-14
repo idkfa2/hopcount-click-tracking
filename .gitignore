@@ -17,3 +17,6 @@ tests/.phpunit.result.cache
 *.log
 ui-screenshots/
 .DS_Store
+
+# Editor workspace files
+*.code-workspace
