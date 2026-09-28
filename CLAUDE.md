@@ -7,7 +7,7 @@ Site-specific deployment material is not part of this repo; a gitignored `local/
 ## Layout
 
 - `hopcount-click-tracking/` - **the plugin. Only this folder is ever deployed.**
-- `tests/` - PHPUnit suite (runs inside wp-env tests container); 184 tests / 1079 assertions
+- `tests/` - PHPUnit suite (runs inside wp-env tests container); 225 tests / 1229 assertions
 - `wp-org-assets/` - banner/icon/screenshots for the wp.org SVN `assets/` dir (not part of the plugin)
 - `README.md` - user-facing docs (install, settings, filters); `CHANGELOG.md` - release notes
 
@@ -36,7 +36,7 @@ Retention: daily cron prunes hourly rows past the configured window (default 24 
 
 ## Admin UI and capability model
 
-Click Tracking menu in wp-admin: **Report** (presets + custom range, host filter, toggleable search - source titles (publish-only) or destination URL/label, typographic chars folded both sides - stat cards, CSV export with formula-injection guard), **Labels** (manual destination-label overrides), **Settings** (admin-only: master switch, excluded roles, internal hosts, retention, rate limiter, uninstall opt-in), **Status** (admin-only: schema/cron/limiter health), plus a **Dashboard widget** (Today/Yesterday/7/30/90-day, per-user preference, 5-min caches).
+Click Tracking menu in wp-admin: **Report** (presets + custom range, host filter, search - default All = each word in published source title OR destination URL OR label, or narrowed to Source/Destination; typographic chars and common entities folded both sides in one ordered pass (`FOLD_MAP`); pasted URLs match (no `sanitize_text_field`), >2048 chars refused - group by link or page, stat cards, CSV export with formula-injection guard), **Labels** (manual destination-label overrides), **Settings** (admin-only: master switch, excluded roles, internal hosts, retention, rate limiter, uninstall opt-in), **Status** (admin-only: schema/cron/limiter health), plus a **Dashboard widget** (Today/Yesterday/7/30/90-day, per-user preference, 5-min caches).
 
 - Report/Labels/widget default to `manage_options` but are filterable: `octk_report_capability`, `octk_label_capability` (a site plugin can map them to e.g. `edit_published_posts`). Settings and Status are hard-coded `manage_options`. These are filter hooks, not capabilities.
 - Excluded roles (default administrator, editor; `octk_default_excluded_roles()`) are not tracked and don't get the listener.

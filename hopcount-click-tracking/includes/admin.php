@@ -43,7 +43,9 @@ function octk_admin_inline_css(): string {
 	.octk-card-value{font-size:20px;font-weight:600;line-height:1.4}
 	.octk-card-label{color:#646970;margin-top:2px}
 	.octk-filters{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:12px 0}
-	.octk-url{color:#787c82;font-size:12px;word-break:break-all}
+	.octk-url{color:#787c82;font-size:12px;overflow-wrap:anywhere}
+	.octk-nowrap{white-space:nowrap}
+	.octk-filters #octk-host{max-width:220px}
 	.octk-table td{vertical-align:top}
 	.octk-dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px;vertical-align:baseline}
 	.octk-dot-ok{background:#00a32a}
@@ -94,7 +96,7 @@ add_filter( 'plugin_action_links_' . plugin_basename( OCTK_PLUGIN_FILE ), static
 function octk_search_source_titles( string $needle ): array {
 	global $wpdb;
 
-	$types  = array_values( array_diff( get_post_types( array( 'public' => true ) ), array( 'attachment' ) ) );
+	$types  = OCTK_Reporting::title_post_types();
 	$tokens = OCTK_Reporting::search_tokens( $needle );
 	if ( empty( $types ) || empty( $tokens ) ) {
 		return array();
@@ -122,11 +124,14 @@ function octk_search_source_titles( string $needle ): array {
 /**
  * Validate GET params into a report request. Invalid values fall back safely.
  *
- * source_id is the exact-post pin set by the "See all links" row action; it
- * wins over a source-mode text search (the pin is more specific), while a
- * destination-mode search still combines with it.
+ * search_in defaults to 'all' (title, URL or label, per word). source_id
+ * is the exact-post pin set by the "See all links" row action; it wins over
+ * a source-mode text search (the pin is more specific), while an all- or
+ * destination-mode search still combines with it. An overlong search is
+ * reported in search_error ('too_long') and must not be treated as "no
+ * search" by callers.
  *
- * @return array{args: array, preset: string, from: string, to: string, search: string, search_in: string, source_id: int, capped: bool}
+ * @return array{args: array, preset: string, from: string, to: string, search: string, search_in: string, search_error: string, group: string, source_id: int, capped: bool}
  */
 function octk_report_request(): array {
 	// phpcs:disable WordPress.Security.NonceVerification.Recommended -- read-only report filters in GET.
@@ -160,15 +165,28 @@ function octk_report_request(): array {
 		$host = '';
 	}
 
-	$search    = sanitize_text_field( wp_unslash( $_GET['search'] ?? '' ) );
-	$search_in = ( 'destination' === ( $_GET['search_in'] ?? '' ) ) ? 'destination' : 'source';
+	$search       = octk_sanitize_search( wp_unslash( $_GET['search'] ?? '' ) ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- octk_sanitize_search() sanitizes.
+	$search_error = '';
+	if ( mb_strlen( $search ) > OCTK_Reporting::SEARCH_MAX ) {
+		// Rejected, never shortened: callers must show an error (Report) or
+		// refuse (CSV), not fall back to unfiltered results.
+		$search       = '';
+		$search_error = 'too_long';
+	}
+	$search_in = sanitize_key( wp_unslash( $_GET['search_in'] ?? '' ) );
+	$search_in = in_array( $search_in, array( 'source', 'destination' ), true ) ? $search_in : 'all';
+	$group     = ( 'page' === sanitize_key( wp_unslash( $_GET['group'] ?? '' ) ) ) ? 'page' : 'link';
 	$source_id = max( 0, (int) ( $_GET['source_id'] ?? 0 ) );
 
 	$source_ids         = ( $source_id > 0 ) ? array( $source_id ) : null;
 	$destination_search = '';
+	$all_search         = '';
 	$capped             = false;
 	if ( '' !== $search ) {
-		if ( 'destination' === $search_in ) {
+		if ( 'all' === $search_in ) {
+			// Reporting joins published titles itself; no ID list, no cap.
+			$all_search = $search;
+		} elseif ( 'destination' === $search_in ) {
 			// Reporting matches this against destination URL and label,
 			// folding typographic characters on both sides itself.
 			$destination_search = $search;
@@ -184,6 +202,12 @@ function octk_report_request(): array {
 		}
 	}
 
+	if ( '' !== $search_error ) {
+		// Belt and braces: even a caller that ignores search_error gets an
+		// empty result, never an unfiltered one.
+		$source_ids = array( 0 );
+	}
+
 	$per_page = (int) ( $_GET['per_page'] ?? 25 );
 	if ( ! in_array( $per_page, OCTK_Reporting::PER_PAGE_CHOICES, true ) ) {
 		$per_page = 25;
@@ -195,6 +219,8 @@ function octk_report_request(): array {
 		'host'               => strtolower( $host ),
 		'source_ids'         => $source_ids,
 		'destination_search' => $destination_search,
+		'all_search'         => $all_search,
+		'group'              => $group,
 		'orderby'            => sanitize_key( $_GET['orderby'] ?? 'clicks' ),
 		'order'              => sanitize_key( $_GET['order'] ?? 'desc' ),
 		'page'               => max( 1, (int) ( $_GET['paged'] ?? 1 ) ),
@@ -207,11 +233,77 @@ function octk_report_request(): array {
 		'preset'    => $preset,
 		'from'      => $from->format( 'Y-m-d' ),
 		'to'        => $to->format( 'Y-m-d' ),
-		'search'    => $search,
-		'search_in' => $search_in,
-		'source_id' => $source_id,
-		'capped'    => $capped,
+		'search'       => $search,
+		'search_in'    => $search_in,
+		'search_error' => $search_error,
+		'group'        => $group,
+		'source_id'    => $source_id,
+		'capped'       => $capped,
 	);
+}
+
+/**
+ * Clean the raw search box value without destroying pasted URLs:
+ * sanitize_text_field() strips %XX octets, which made an encoded affiliate
+ * URL unmatchable. No entity decoding here either; the one fold
+ * (OCTK_Reporting::fold_needle(), applied in search_tokens()) handles
+ * entities identically on both sides. The result only ever reaches
+ * prepared LIKE values (via esc_like) and escaped output.
+ *
+ * @param mixed $raw Raw, unslashed GET value.
+ */
+function octk_sanitize_search( $raw ): string {
+	if ( ! is_string( $raw ) ) {
+		return '';
+	}
+	// Invalid UTF-8 empties the search (iconv //IGNORE is not portable).
+	$value = wp_check_invalid_utf8( $raw );
+	$value = wp_strip_all_tags( $value );
+	$value = preg_replace( '/\s+/u', ' ', $value );
+	return trim( is_string( $value ) ? $value : '' );
+}
+
+/**
+ * Args for the empty-result hint: the same range, host and explicit pin,
+ * with the search re-run in all mode. The reporting layer never reads
+ * search_in, so the args are rebuilt: destination_search cleared and
+ * title-derived source_ids (including the array( 0 ) no-match sentinel)
+ * dropped, keeping only the "See all links" pin.
+ */
+function octk_report_all_args( array $request ): array {
+	$args                       = $request['args'];
+	$args['all_search']         = $request['search'];
+	$args['destination_search'] = '';
+	$args['source_ids']         = ( $request['source_id'] > 0 ) ? array( (int) $request['source_id'] ) : null;
+	return $args;
+}
+
+/**
+ * Destination URL for display: percent-decoded so the part that tells
+ * links apart is readable (affiliate URLs carry the target encoded), then
+ * shortened in the middle so the distinguishing tail stays visible. Falls
+ * back to the raw URL when decoding yields invalid UTF-8. Display only:
+ * links, tooltips and CSV keep the stored URL. Callers escape.
+ */
+function octk_display_url( string $url ): string {
+	return implode( '…', octk_display_url_parts( $url ) );
+}
+
+/**
+ * octk_display_url() as parts: array( $url ) when short enough, else
+ * array( $head, $tail ) around the omitted middle.
+ *
+ * @return string[]
+ */
+function octk_display_url_parts( string $url ): array {
+	$decoded = rawurldecode( $url );
+	if ( '' === wp_check_invalid_utf8( $decoded ) ) {
+		$decoded = $url;
+	}
+	if ( mb_strlen( $decoded ) <= 90 ) {
+		return array( $decoded );
+	}
+	return array( mb_substr( $decoded, 0, 52 ), mb_substr( $decoded, -35 ) );
 }
 
 function octk_render_report_page(): void {
@@ -236,6 +328,18 @@ function octk_render_report_page(): void {
 	}
 
 	$request = octk_report_request();
+
+	if ( '' !== $request['search_error'] ) {
+		// Never fall back to unfiltered results for a rejected search.
+		octk_report_filters_form( $request );
+		echo '<div class="notice notice-error"><p>' . sprintf(
+			/* translators: %d: maximum search length in characters. */
+			esc_html__( 'Search is too long (max %d characters).', 'hopcount-click-tracking' ),
+			(int) OCTK_Reporting::SEARCH_MAX
+		) . '</p></div></div>';
+		return;
+	}
+
 	$summary = OCTK_Reporting::summary( $request['args'] );
 	$result  = OCTK_Reporting::query_rows( $request['args'] );
 
@@ -285,6 +389,7 @@ function octk_render_report_page(): void {
 			echo '<p>' . esc_html__( 'No outbound links have been registered yet. Links register the first time a post renders uncached with tracking enabled.', 'hopcount-click-tracking' ) . '</p>';
 		} else {
 			echo '<p>' . esc_html__( 'No clicks match the selected filters. Try a wider date range or clear the filters.', 'hopcount-click-tracking' ) . '</p>';
+			octk_report_all_hint( $request );
 		}
 		echo '</div>';
 		return;
@@ -292,6 +397,31 @@ function octk_render_report_page(): void {
 
 	octk_report_table( $result, $request );
 	echo '</div>';
+}
+
+/**
+ * Empty result in source or destination mode: if the same search in All
+ * mode (same range, host and pin) finds clicks, say how many and link there.
+ * Silent otherwise, since the range, host or pin is then the cause.
+ */
+function octk_report_all_hint( array $request ): void {
+	if ( '' === $request['search'] || 'all' === $request['search_in'] ) {
+		return;
+	}
+	$all = OCTK_Reporting::summary( octk_report_all_args( $request ) );
+	if ( null === $all || $all->clicks <= 0 ) {
+		return;
+	}
+	$url = add_query_arg( array_merge( $_GET, array( 'search_in' => 'all', 'paged' => false ) ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+	if ( 'destination' === $request['search_in'] ) {
+		/* translators: %s: number of clicks, formatted. */
+		$text = _n( 'No matches in destinations. %s click matches in All.', 'No matches in destinations. %s clicks match in All.', $all->clicks, 'hopcount-click-tracking' );
+	} else {
+		/* translators: %s: number of clicks, formatted. */
+		$text = _n( 'No matches in source content. %s click matches in All.', 'No matches in source content. %s clicks match in All.', $all->clicks, 'hopcount-click-tracking' );
+	}
+	echo '<div class="notice notice-info octk-all-hint"><p>' . esc_html( sprintf( $text, number_format_i18n( $all->clicks ) ) )
+		. ' <a href="' . esc_url( $url ) . '">' . esc_html__( 'Search All', 'hopcount-click-tracking' ) . '</a></p></div>';
 }
 
 /**
@@ -316,6 +446,9 @@ function octk_export_url( array $request ): string {
 	}
 	if ( ! empty( $request['source_id'] ) ) {
 		$params['source_id'] = (int) $request['source_id'];
+	}
+	if ( 'page' === ( $request['group'] ?? 'link' ) ) {
+		$params['group'] = 'page';
 	}
 	$params['orderby'] = $request['args']['orderby'];
 	$params['order']   = $request['args']['order'];
@@ -358,6 +491,7 @@ function octk_report_filters_form( array $request ): void {
 
 	echo '<label for="octk-search-in">' . esc_html__( 'Search', 'hopcount-click-tracking' ) . '</label> <select name="search_in" id="octk-search-in" aria-label="' . esc_attr__( 'Search in', 'hopcount-click-tracking' ) . '">';
 	$search_ins = array(
+		'all'         => __( 'All', 'hopcount-click-tracking' ),
 		'source'      => __( 'Source content', 'hopcount-click-tracking' ),
 		'destination' => __( 'Destination', 'hopcount-click-tracking' ),
 	);
@@ -371,6 +505,16 @@ function octk_report_filters_form( array $request ): void {
 		esc_attr__( 'Contains&hellip;', 'hopcount-click-tracking' ),
 		esc_attr__( 'Search text', 'hopcount-click-tracking' )
 	);
+
+	echo '<label for="octk-group">' . esc_html__( 'Group by', 'hopcount-click-tracking' ) . '</label> <select name="group" id="octk-group">';
+	$groups = array(
+		'link' => __( 'Link', 'hopcount-click-tracking' ),
+		'page' => __( 'Page', 'hopcount-click-tracking' ),
+	);
+	foreach ( $groups as $value => $label ) {
+		printf( '<option value="%s"%s>%s</option>', esc_attr( $value ), selected( $request['group'], $value, false ), esc_html( $label ) );
+	}
+	echo '</select> ';
 
 	echo '<label for="octk-per-page">' . esc_html__( 'Show', 'hopcount-click-tracking' ) . '</label> <select name="per_page" id="octk-per-page">';
 	foreach ( OCTK_Reporting::PER_PAGE_CHOICES as $choice ) {
@@ -430,11 +574,21 @@ function octk_report_table( $result, array $request ): void {
 		return '<a href="' . esc_url( $url ) . '">' . esc_html( $label ) . $mark . '</a>';
 	};
 
+	$by_page = 'page' === ( $request['group'] ?? 'link' );
+
 	echo '<table class="widefat striped octk-table">';
-	echo '<colgroup><col style="width:30%" /><col /><col style="width:80px" /><col style="width:190px" /></colgroup>';
+	if ( $by_page ) {
+		echo '<colgroup><col /><col style="width:80px" /><col style="width:80px" /><col style="width:190px" /></colgroup>';
+	} else {
+		echo '<colgroup><col style="width:30%" /><col /><col style="width:80px" /><col style="width:190px" /></colgroup>';
+	}
 	echo '<thead><tr>';
 	echo '<th scope="col">' . esc_html__( 'Source content', 'hopcount-click-tracking' ) . '</th>';
-	echo '<th scope="col">' . esc_html__( 'Destination', 'hopcount-click-tracking' ) . '</th>';
+	if ( $by_page ) {
+		echo '<th scope="col" style="text-align:right;">' . esc_html__( 'Links', 'hopcount-click-tracking' ) . '</th>';
+	} else {
+		echo '<th scope="col">' . esc_html__( 'Destination', 'hopcount-click-tracking' ) . '</th>';
+	}
 	echo '<th scope="col" style="text-align:right;">' . $sort_link( 'clicks', __( 'Clicks', 'hopcount-click-tracking' ) ) . '</th>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 	echo '<th scope="col">' . $sort_link( 'last_activity', __( 'Last activity', 'hopcount-click-tracking' ) ) . '</th>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 	echo '</tr></thead><tbody>';
@@ -449,27 +603,55 @@ function octk_report_table( $result, array $request ): void {
 			$source = esc_html( $row->source_url ?: sprintf( __( '(deleted post #%d)', 'hopcount-click-tracking' ), (int) $row->source_id ) ) . ' <em>' . esc_html__( '(deleted)', 'hopcount-click-tracking' ) . '</em>';
 		}
 
-		// Pin the report to this exact post; drops any text search (the pin
-		// replaces it) but keeps range/host/sort.
-		$pin_url = add_query_arg( array_merge( $_GET, array( // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-			'source_id' => (int) $row->source_id,
-			'paged'     => false,
-			'search'    => false,
-			'search_in' => false,
-		) ) );
+		if ( $by_page ) {
+			// Drill into the links behind this page's total: keep the search
+			// (so the same links show) and range/host/sort, back to link rows.
+			$pin_url = add_query_arg( array_merge( $_GET, array( // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+				'source_id' => (int) $row->source_id,
+				'paged'     => false,
+				'group'     => 'link',
+			) ) );
+		} else {
+			// Pin the report to this exact post; drops any text search (the pin
+			// replaces it) but keeps range/host/sort.
+			$pin_url = add_query_arg( array_merge( $_GET, array( // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+				'source_id' => (int) $row->source_id,
+				'paged'     => false,
+				'search'    => false,
+				'search_in' => false,
+			) ) );
+		}
 		$source .= '<div class="row-actions"><a href="' . esc_url( $pin_url ) . '">' . esc_html__( 'See all links', 'hopcount-click-tracking' ) . '</a></div>';
 
-		$dest_display = strlen( $row->destination_url ) > 90 ? substr( $row->destination_url, 0, 87 ) . '…' : $row->destination_url;
+		if ( $by_page ) {
+			printf(
+				'<tr><td>%s</td><td style="text-align:right;">%s</td><td style="text-align:right;">%s</td><td>%s</td></tr>',
+				$source, // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped above.
+				esc_html( number_format_i18n( (int) $row->links ) ),
+				esc_html( number_format_i18n( (int) $row->clicks ) ),
+				esc_html( octk_format_bucket( $row->last_bucket ) )
+			);
+			continue;
+		}
+
+		// A shortened URL may only wrap at its middle ellipsis: the tail (the
+		// part that tells links apart) is kept on one line, not split at a
+		// hyphen or mid-word. Both parts are escaped.
+		$parts        = octk_display_url_parts( (string) $row->destination_url );
+		$dest_display = esc_html( $parts[0] );
+		if ( isset( $parts[1] ) ) {
+			$dest_display .= '…<wbr><span class="octk-nowrap">' . esc_html( $parts[1] ) . '</span>';
+		}
 		$label        = isset( $row->label ) && is_string( $row->label ) && '' !== $row->label ? $row->label : null;
 
 		if ( null !== $label ) {
 			// Stacked (link-labels plan): label bold, host + URL always visible beneath.
 			$origin_mark = ( 'manual' === ( $row->label_origin ?? '' ) ) ? ' <em class="octk-url">' . esc_html__( '(edited)', 'hopcount-click-tracking' ) . '</em>' : '';
 			$destination = '<a href="' . esc_url( $row->destination_url ) . '" rel="noopener noreferrer nofollow" target="_blank" title="' . esc_attr( $row->destination_url ) . '"><strong>' . esc_html( $label ) . '</strong></a>' . $origin_mark
-				. '<br /><span class="octk-url">' . esc_html( $row->destination_host ) . ' · ' . esc_html( $dest_display ) . '</span>';
+				. '<br /><span class="octk-url">' . esc_html( $row->destination_host ) . ' · ' . $dest_display . '</span>';
 		} else {
 			$destination = '<a href="' . esc_url( $row->destination_url ) . '" rel="noopener noreferrer nofollow" target="_blank" title="' . esc_attr( $row->destination_url ) . '"><strong>' . esc_html( $row->destination_host ) . '</strong></a>'
-				. '<br /><span class="octk-url">' . esc_html( $dest_display ) . '</span>';
+				. '<br /><span class="octk-url">' . $dest_display . '</span>';
 		}
 
 		if ( current_user_can( octk_label_capability() ) ) {

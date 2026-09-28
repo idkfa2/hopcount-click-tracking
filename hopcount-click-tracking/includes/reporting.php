@@ -17,30 +17,64 @@ class OCTK_Reporting {
 	const MAX_SOURCE_IDS   = 100;
 
 	/**
-	 * Typographic characters folded to their ASCII keyboard forms before
+	 * Longest accepted search, in characters. Matches the destination_url
+	 * column so any stored URL can be pasted whole; longer input is rejected
+	 * upstream, never shortened (a shortened URL would match every URL
+	 * sharing its prefix).
+	 */
+	const SEARCH_MAX = 2048;
+
+	/**
+	 * Characters and entities folded to their ASCII keyboard forms before
 	 * substring matching, on both the needle and the haystack. Stored titles
-	 * and captured labels contain texturized en/em dashes and curly quotes;
-	 * searchers type '-' and "'".
+	 * contain entities (`&amp;`, sometimes numeric ones) and texturized
+	 * dashes/quotes; searchers type '&', '-' and "'".
+	 *
+	 * ORDERED: both sides apply the list sequentially, first entry first
+	 * (fold_needle() loops, fold_sql() nests the first entry innermost), so
+	 * they agree on every input. `&amp;` comes last so `&amp;#8217;` folds
+	 * to `&#8217;`, not to "'". Entities not listed stay literal on both sides.
 	 */
 	private const FOLD_MAP = array(
-		'–' => '-',
-		'—' => '-',
-		'’' => "'",
-		'‘' => "'",
+		'–'       => '-',
+		'—'       => '-',
+		'’'       => "'",
+		'‘'       => "'",
+		'&#8211;' => '-',
+		'&#8212;' => '-',
+		'&#8217;' => "'",
+		'&#8216;' => "'",
+		'&#039;'  => "'",
+		'&quot;'  => '"',
+		'&#038;'  => '&',
+		'&amp;'   => '&',
 	);
 
 	public static function fold_needle( string $needle ): string {
-		return strtr( $needle, self::FOLD_MAP );
+		foreach ( self::FOLD_MAP as $from => $to ) {
+			$needle = str_replace( $from, $to, $needle );
+		}
+		return $needle;
 	}
 
 	/**
-	 * Wrap a SQL expression in REPLACE() calls applying FOLD_MAP.
+	 * Wrap a SQL expression in REPLACE() calls applying FOLD_MAP, in the
+	 * same order as fold_needle().
 	 */
 	public static function fold_sql( string $expr ): string {
 		foreach ( self::FOLD_MAP as $from => $to ) {
 			$expr = "REPLACE({$expr}, '{$from}', '" . str_replace( "'", "''", $to ) . "')";
 		}
 		return $expr;
+	}
+
+	/**
+	 * Post types whose titles are searchable: public, minus attachments.
+	 *
+	 * @return string[]
+	 */
+	public static function title_post_types(): array {
+		return array_values( array_diff( get_post_types( array( 'public' => true ) ), array( 'attachment' ) ) );
 	}
 
 	/**
@@ -67,20 +101,69 @@ class OCTK_Reporting {
 		'last_activity_asc'  => 'ORDER BY last_bucket ASC, l.id ASC',
 	);
 
+	/** Page-grouped variants: the tiebreaker must be the group key. */
+	private const ORDER_SQL_PAGE = array(
+		'clicks_desc'        => 'ORDER BY clicks DESC, l.source_id ASC',
+		'clicks_asc'         => 'ORDER BY clicks ASC, l.source_id ASC',
+		'last_activity_desc' => 'ORDER BY last_bucket DESC, l.source_id ASC',
+		'last_activity_asc'  => 'ORDER BY last_bucket ASC, l.source_id ASC',
+	);
+
 	/** Resolve request orderby/order to one of the ORDER_SQL literals. */
 	private static function order_sql( array $args ): string {
 		$orderby = ( 'last_activity' === ( $args['orderby'] ?? '' ) ) ? 'last_activity' : 'clicks';
 		$order   = ( 'asc' === strtolower( $args['order'] ?? '' ) ) ? 'asc' : 'desc';
-		return self::ORDER_SQL[ "{$orderby}_{$order}" ];
+		$map     = self::group_by_page( $args ) ? self::ORDER_SQL_PAGE : self::ORDER_SQL;
+		return $map[ "{$orderby}_{$order}" ];
 	}
 
-	/** Table identifiers for the %i placeholders, in the order the queries use them. */
-	private static function join_tables(): array {
-		return array( octk_table_clicks(), octk_table_links(), octk_table_overrides() );
+	/** Whether rows are rolled up to one per source post. */
+	private static function group_by_page( array $args ): bool {
+		return 'page' === ( $args['group'] ?? '' );
 	}
 
 	/**
-	 * Paginated per-identity rows for a UTC range.
+	 * FROM/JOIN clause shared by every report query, plus its prepare()
+	 * values: %i for each table, then one %s per post type when the posts
+	 * join is present. The posts join is added only for an all-mode search
+	 * (it needs titles); it is a primary-key join restricted to published,
+	 * searchable posts, so it matches at most one row per link and never
+	 * multiplies aggregates.
+	 *
+	 * @return array{0: string, 1: array}
+	 */
+	private static function from_sql( array $args ): array {
+		global $wpdb;
+
+		$sql    = 'FROM %i c JOIN %i l ON l.id = c.link_id ' . self::overrides_join_sql();
+		$values = array( octk_table_clicks(), octk_table_links(), octk_table_overrides() );
+
+		$types = self::all_search_types( $args );
+		if ( ! empty( $types ) ) {
+			$placeholders = implode( ', ', array_fill( 0, count( $types ), '%s' ) );
+			$sql         .= " LEFT JOIN %i p ON p.ID = l.source_id AND p.post_status = 'publish' AND p.post_type IN ({$placeholders})";
+			$values       = array_merge( $values, array( $wpdb->posts ), $types );
+		}
+		return array( $sql, $values );
+	}
+
+	/**
+	 * Post types for the all-mode title join; empty when there is no
+	 * all-mode search (or, defensively, no searchable types), in which case
+	 * all mode matches destinations only.
+	 *
+	 * @return string[]
+	 */
+	private static function all_search_types( array $args ): array {
+		if ( empty( $args['all_search'] ) || empty( self::search_tokens( (string) $args['all_search'] ) ) ) {
+			return array();
+		}
+		return self::title_post_types();
+	}
+
+	/**
+	 * Paginated rows for a UTC range: one per link identity, or one per
+	 * source post when $group is 'page'.
 	 *
 	 * @param array $args {
 	 *     @type string   $start_utc          'Y-m-d H:i:s' inclusive.
@@ -88,6 +171,9 @@ class OCTK_Reporting {
 	 *     @type string   $host               Optional destination host filter.
 	 *     @type int[]    $source_ids         Optional source post filter (capped upstream).
 	 *     @type string   $destination_search Optional substring match on destination URL or label.
+	 *     @type string   $all_search         Optional per-word match: every word in the
+	 *                                        source title, destination URL or label.
+	 *     @type string   $group              'link' (default) | 'page'.
 	 *     @type string   $orderby            'clicks' | 'last_activity'.
 	 *     @type string   $order              'asc' | 'desc'.
 	 *     @type int      $page               1-based.
@@ -98,30 +184,27 @@ class OCTK_Reporting {
 	public static function query_rows( array $args ) {
 		global $wpdb;
 
-		$join = self::overrides_join_sql();
-
-		list( $where, $values ) = self::build_where( $args );
+		list( $from, $from_values ) = self::from_sql( $args );
+		list( $where, $values )     = self::build_where( $args );
 
 		$per_page = in_array( (int) ( $args['per_page'] ?? 0 ), self::PER_PAGE_CHOICES, true ) ? (int) $args['per_page'] : self::PER_PAGE_CHOICES[0];
 		$page     = max( 1, (int) ( $args['page'] ?? 1 ) );
 		$offset   = ( $page - 1 ) * $per_page;
 
-		$total = $wpdb->get_var(
-			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $join / $where are placeholder-only fragments (overrides_join_sql, build_where); tables and values are prepared.
-			$wpdb->prepare(
-				"SELECT COUNT(DISTINCT c.link_id) FROM %i c JOIN %i l ON l.id = c.link_id {$join} WHERE {$where}",
-				array_merge( self::join_tables(), $values )
-			)
+		$count_expr = self::group_by_page( $args ) ? 'COUNT(DISTINCT l.source_id)' : 'COUNT(DISTINCT c.link_id)';
+		$total      = $wpdb->get_var(
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $count_expr is a literal; $from / $where are placeholder-only fragments (from_sql, build_where); tables and values are prepared.
+			$wpdb->prepare( "SELECT {$count_expr} {$from} WHERE {$where}", array_merge( $from_values, $values ) )
 		);
 		if ( null === $total && '' !== $wpdb->last_error ) {
 			octk_log( 'report count failed: ' . $wpdb->last_error );
 			return null;
 		}
 
-		$sql  = self::row_select_sql( $where, self::order_sql( $args ) );
+		$sql  = self::row_select_sql( $args, $from, $where );
 		$rows = $wpdb->get_results(
 			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $sql is placeholder-only SQL (row_select_sql); tables and values are prepared.
-			$wpdb->prepare( $sql, array_merge( self::join_tables(), $values, array( $per_page, $offset ) ) )
+			$wpdb->prepare( $sql, array_merge( $from_values, $values, array( $per_page, $offset ) ) )
 		);
 		if ( ! is_array( $rows ) ) {
 			octk_log( 'report query failed: ' . $wpdb->last_error );
@@ -142,20 +225,32 @@ class OCTK_Reporting {
 	 * equality is a byte-level promise. Never selects tokens, identity
 	 * hashes, or internal ids.
 	 *
-	 * Returns placeholder-only SQL: %i for the three tables (join_tables()
-	 * order), the build_where() placeholders, then %d LIMIT / %d OFFSET.
-	 * $order_sql is one of the ORDER_SQL literals.
+	 * Page grouping selects per-post aggregates instead: the number of
+	 * distinct matching links, their summed clicks and latest bucket.
+	 *
+	 * Returns placeholder-only SQL: the from_sql() placeholders, the
+	 * build_where() placeholders, then %d LIMIT / %d OFFSET. The ORDER BY is
+	 * one of the ORDER_SQL literals.
 	 */
-	private static function row_select_sql( string $where, string $order_sql ): string {
-		$join = self::overrides_join_sql();
+	private static function row_select_sql( array $args, string $from, string $where ): string {
+		$order_sql = self::order_sql( $args );
+
+		if ( self::group_by_page( $args ) ) {
+			return "SELECT MAX(l.source_type) AS source_type, l.source_id, MAX(l.source_url) AS source_url,
+					COUNT(DISTINCT l.id) AS links,
+					SUM(c.hits) AS clicks, MAX(c.bucket_start_utc) AS last_bucket
+					{$from}
+					WHERE {$where}
+					GROUP BY l.source_id
+					{$order_sql}
+					LIMIT %d OFFSET %d";
+		}
 
 		return "SELECT l.source_type, l.source_id, l.source_url, l.destination_url, l.destination_host,
 				COALESCE(o.label, l.label) AS label,
 				CASE WHEN o.label IS NOT NULL THEN 'manual' WHEN l.label IS NOT NULL THEN 'auto' ELSE '' END AS label_origin,
 				SUM(c.hits) AS clicks, MAX(c.bucket_start_utc) AS last_bucket
-				FROM %i c
-				JOIN %i l ON l.id = c.link_id
-				{$join}
+				{$from}
 				WHERE {$where}
 				GROUP BY l.id
 				{$order_sql}
@@ -174,22 +269,24 @@ class OCTK_Reporting {
 	/**
 	 * Unpaginated slice of the same aggregation for CSV export. Callers
 	 * (includes/export.php) iterate in bounded batches; sorting reuses the
-	 * report allow-list with l.id as the tiebreaker, so batches are stable.
+	 * report allow-list with the group key as the tiebreaker, so batches
+	 * are stable.
 	 *
 	 * @return object[]|null Rows, or null on query failure.
 	 */
 	public static function export_rows( array $args, int $limit, int $offset ) {
 		global $wpdb;
 
-		list( $where, $values ) = self::build_where( $args );
+		list( $from, $from_values ) = self::from_sql( $args );
+		list( $where, $values )     = self::build_where( $args );
 
 		$limit  = max( 1, $limit );
 		$offset = max( 0, $offset );
 
-		$sql  = self::row_select_sql( $where, self::order_sql( $args ) );
+		$sql  = self::row_select_sql( $args, $from, $where );
 		$rows = $wpdb->get_results(
 			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $sql is placeholder-only SQL (row_select_sql); tables and values are prepared.
-			$wpdb->prepare( $sql, array_merge( self::join_tables(), $values, array( $limit, $offset ) ) )
+			$wpdb->prepare( $sql, array_merge( $from_values, $values, array( $limit, $offset ) ) )
 		);
 		if ( ! is_array( $rows ) ) {
 			octk_log( 'export query failed: ' . $wpdb->last_error );
@@ -206,17 +303,16 @@ class OCTK_Reporting {
 	public static function summary( array $args ) {
 		global $wpdb;
 
-		$join = self::overrides_join_sql();
-
-		list( $where, $values ) = self::build_where( $args );
+		list( $from, $from_values ) = self::from_sql( $args );
+		list( $where, $values )     = self::build_where( $args );
 
 		$row = $wpdb->get_row(
-			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $join / $where are placeholder-only fragments (overrides_join_sql, build_where); tables and values are prepared.
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $from / $where are placeholder-only fragments (from_sql, build_where); tables and values are prepared.
 			$wpdb->prepare(
 				"SELECT COALESCE(SUM(c.hits), 0) AS clicks, COUNT(DISTINCT c.link_id) AS identities,
 				COUNT(DISTINCT l.source_id) AS sources, MAX(c.bucket_start_utc) AS last_bucket
-				FROM %i c JOIN %i l ON l.id = c.link_id {$join} WHERE {$where}",
-				array_merge( self::join_tables(), $values )
+				{$from} WHERE {$where}",
+				array_merge( $from_values, $values )
 			)
 		);
 		if ( ! is_object( $row ) ) {
@@ -299,6 +395,29 @@ class OCTK_Reporting {
 			foreach ( self::search_tokens( (string) $args['destination_search'] ) as $token ) {
 				$like     = '%' . $wpdb->esc_like( $token ) . '%';
 				$where   .= " AND (l.destination_url LIKE %s OR {$label_expr} LIKE %s)";
+				$values[] = $like;
+				$values[] = $like;
+			}
+		}
+
+		if ( ! empty( $args['all_search'] ) ) {
+			// All mode: every word must appear in the source title, the URL
+			// or the resolved label, and different words may match in
+			// different places ("joe rogan hone" = Hone links on Joe Rogan
+			// posts). p is the published-only posts join from from_sql(); a
+			// NULL title (draft, deleted) simply fails its LIKE. Without
+			// searchable post types the title branch is left out.
+			$label_expr = self::fold_sql( 'COALESCE(o.label, l.label)' );
+			$has_titles = ! empty( self::all_search_types( $args ) );
+			$title_expr = self::fold_sql( 'p.post_title' );
+			foreach ( self::search_tokens( (string) $args['all_search'] ) as $token ) {
+				$like = '%' . $wpdb->esc_like( $token ) . '%';
+				if ( $has_titles ) {
+					$where   .= " AND ({$title_expr} LIKE %s OR l.destination_url LIKE %s OR {$label_expr} LIKE %s)";
+					$values[] = $like;
+				} else {
+					$where .= " AND (l.destination_url LIKE %s OR {$label_expr} LIKE %s)";
+				}
 				$values[] = $like;
 				$values[] = $like;
 			}

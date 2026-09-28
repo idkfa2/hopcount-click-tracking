@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.3.0 - 2026-09-28
+
+- Report search has a new default mode, **All**: every search word must appear in the source post title (published only), the destination URL or the resolved label, and different words may match in different places ("joe rogan hone" = Hone links on Joe Rogan posts). It joins published titles in the report query, so it has no 100-post cap. **Source content** and **Destination** keep their previous behaviour; `search_in` now defaults to `all`.
+- The search value is no longer passed through `sanitize_text_field()`, which stripped `%XX` octets and made pasted affiliate URLs unmatchable. Searches over 2048 characters (the `destination_url` column size) are refused with a notice, and the CSV export answers them with HTTP 400 instead of exporting unfiltered rows.
+- Search folding now also covers `&amp;`, `&#038;`, `&#039;`, `&#8211;`, `&#8212;`, `&#8216;`, `&#8217;` and `&quot;`, applied in the same order to the search text and to titles and labels (`&amp;` last). Other entities stay literal on both sides.
+- Empty Source content or Destination searches show how many clicks the same search matches in All, with a link.
+- **Group by: Page** rolls the table up to one row per source post (matching links, clicks, last activity), with sorting, pagination and CSV export (`clicks-by-page_<from>_<to>.csv`, columns `source_post_id, source_title, source_url, links, clicks, last_activity_utc, last_activity_site_tz`). Link-mode CSV columns are unchanged. "See all links" from a page row keeps the search.
+- Destination URLs are displayed percent-decoded and middle-truncated, wrapping only at the omitted middle; links, tooltips and CSV keep the stored URL. The host filter is capped at 220px so the filter bar fits on one row.
+
 ## 1.2.0 - 2026-09-14
 
 - Cloaked same-site links (`/go/product`, `/recommends/product`, bare `/product-name` created by Redirection, Pretty Links, ThirstyAffiliates or a server rule) are now tracked under their real destination. The plugin asks its own server where each same-site link goes with a signed `HEAD` request that never renders a page, and stores the answer in two new tables, `octk_redirects` and `octk_redirect_sources` (schema version 3). Discovery happens at render, on save and by an upgrade backfill; answers are refreshed weekly by WP-Cron with backoff for errors. A changed destination purges the referencing posts (post cache, WP Rocket) and fires `octk_resolution_changed`.

@@ -3,7 +3,8 @@
  * CSV export of the report (post-v1 feature, added 0.2.0).
  *
  * The export honors the same filters as the Report screen - date preset or
- * custom range, destination host, source/destination search - passed as GET params to
+ * custom range, destination host, all/source/destination search, link or page
+ * grouping - passed as GET params to
  * admin-post.php. Rows come from OCTK_Reporting::export_rows() in bounded
  * batches; output is streamed, never buffered whole. Same column policy as
  * the report: no public_token, identity_hash, or internal database ids.
@@ -27,8 +28,18 @@ function octk_handle_export_csv(): void {
 		wp_die( esc_html__( 'The tracking tables are unavailable.', 'hopcount-click-tracking' ), '', 500 );
 	}
 
-	$request  = octk_report_request();
-	$filename = sprintf( 'clicks_%s_%s.csv', $request['from'], $request['to'] );
+	$request = octk_report_request();
+	if ( '' !== $request['search_error'] ) {
+		// Before any CSV header: a rejected search must never export
+		// unfiltered rows.
+		wp_die(
+			/* translators: %d: maximum search length in characters. */
+			esc_html( sprintf( __( 'Search is too long (max %d characters).', 'hopcount-click-tracking' ), OCTK_Reporting::SEARCH_MAX ) ),
+			'',
+			400
+		);
+	}
+	$filename = octk_export_filename( $request );
 
 	nocache_headers();
 	header( 'Content-Type: text/csv; charset=utf-8' );
@@ -40,30 +51,52 @@ function octk_handle_export_csv(): void {
 }
 
 /**
+ * Download filename; page-grouped exports get their own name because their
+ * columns differ from the link export.
+ */
+function octk_export_filename( array $request ): string {
+	$format = ( 'page' === ( $request['group'] ?? 'link' ) ) ? 'clicks-by-page_%s_%s.csv' : 'clicks_%s_%s.csv';
+	return sprintf( $format, $request['from'], $request['to'] );
+}
+
+/**
  * Stream the CSV body for a validated report request (headers not included,
  * so tests can capture output). Batched; a hard cap of
  * OCTK_EXPORT_BATCH * OCTK_EXPORT_MAX_BATCHES rows is announced in the
  * file rather than applied silently.
  */
 function octk_export_csv_stream( array $args ): void {
-	$out = fopen( 'php://output', 'w' );
+	$out     = fopen( 'php://output', 'w' );
+	$by_page = 'page' === ( $args['group'] ?? 'link' );
 
 	// UTF-8 BOM so Excel detects the encoding.
 	fwrite( $out, "\xEF\xBB\xBF" ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- streaming to php://output, not the filesystem.
 
-	// 'label' is deliberately LAST: existing consumers' column positions must not shift.
 	// Machine-readable column identifiers: deliberately NOT translated.
-	octk_csv_row( $out, array(
-		'source_post_id',
-		'source_title',
-		'source_url',
-		'destination_host',
-		'destination_url',
-		'clicks',
-		'last_activity_utc',
-		'last_activity_site_tz',
-		'label',
-	) );
+	if ( $by_page ) {
+		octk_csv_row( $out, array(
+			'source_post_id',
+			'source_title',
+			'source_url',
+			'links',
+			'clicks',
+			'last_activity_utc',
+			'last_activity_site_tz',
+		) );
+	} else {
+		// 'label' is deliberately LAST: existing consumers' column positions must not shift.
+		octk_csv_row( $out, array(
+			'source_post_id',
+			'source_title',
+			'source_url',
+			'destination_host',
+			'destination_url',
+			'clicks',
+			'last_activity_utc',
+			'last_activity_site_tz',
+			'label',
+		) );
+	}
 
 	$site_tz = wp_timezone();
 
@@ -92,6 +125,19 @@ function octk_export_csv_stream( array $args ): void {
 			$bucket    = DateTimeImmutable::createFromFormat( 'Y-m-d H:i:s', $last_utc, new DateTimeZone( 'UTC' ) );
 			if ( false !== $bucket ) {
 				$last_site = $bucket->setTimezone( $site_tz )->format( 'Y-m-d H:i:s' );
+			}
+
+			if ( $by_page ) {
+				octk_csv_row( $out, array(
+					(int) $row->source_id,
+					$title,
+					$post ? get_permalink( $post ) : (string) $row->source_url,
+					(int) $row->links,
+					(int) $row->clicks,
+					$last_utc,
+					$last_site,
+				) );
+				continue;
 			}
 
 			octk_csv_row( $out, array(

@@ -3,7 +3,7 @@ Contributors: aph5
 Tags: outbound links, affiliate, click tracking, analytics, privacy
 Requires at least: 6.5
 Tested up to: 7.1
-Stable tag: 1.2.0
+Stable tag: 1.3.0
 Requires PHP: 8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -31,7 +31,7 @@ Because the token lives in the rendered HTML, the plugin keeps working behind WP
 
 **Reporting**
 
-* Report screen with date presets or a custom range, host filter, search by post title or destination, summary cards and CSV export.
+* Report screen with date presets or a custom range, host filter, one search box across post titles, destination URLs and labels, per-link or per-page totals, summary cards and CSV export.
 * Labels screen to give any destination URL a friendly name.
 * Dashboard widget with the top links for today, yesterday, 7, 30 or 90 days.
 * Status screen showing schema, cron and rate-limiter health.
@@ -117,6 +117,14 @@ Data is kept by default. Tick the option on the Settings screen if you want the 
 
 == Changelog ==
 
+= 1.3.0 =
+* Report search now looks everywhere by default: the new "All" mode matches each word against the source post title, the destination URL or the link label, so "hone" finds every Hone Health link and "joe rogan hone" finds the Hone links on Joe Rogan posts. "Source content" and "Destination" remain as narrower options.
+* A full affiliate URL pasted into the search box now matches. Previously the percent-encoded parts (%3A, %2F) were stripped before searching. Searches longer than 2048 characters are refused rather than shortened.
+* "&amp;" and common numeric entities in post titles and labels now match what you type ("R&D" finds a title stored as "R&amp;D").
+* When a Source content or Destination search finds nothing but "All" would, the Report says how many clicks match and links there.
+* New "Group by: Page" option totals the matching links on each post (links, clicks, last activity). "See all links" on a page row opens the links behind that total. CSV export follows the grouping (page exports have their own file name and columns; link exports are unchanged).
+* Destination URLs in the Report are shown decoded and shortened in the middle, so links that differ only at the end can be told apart.
+
 = 1.2.0 =
 * Cloaked links on your own site (for example /go/product or /recommends/product created by Redirection, Pretty Links, ThirstyAffiliates or a server rule) are now tracked under their real destination. The plugin asks your own server where the link goes, with a signed request that never renders a page, and records the answer in two new tables (schema version 3). Answers are refreshed weekly by WP-Cron and are bounded by a per-render budget, a per-run budget, a daily cap and a circuit breaker.
 * Status screen: new rows for the resolution state, counts, probes today, the probe route and the cron, plus a "Clear resolution cache" button.
@@ -152,6 +160,9 @@ Data is kept by default. Tick the option on the Settings screen if you want the 
 * Initial private releases: token annotation, beacon listener, REST endpoint, hourly aggregates, Report, Labels, Settings and Status screens, dashboard widget, retention, rate limiter, CSV export.
 
 == Upgrade Notice ==
+
+= 1.3.0 =
+Report search covers titles, destinations and labels by default, pasted URLs match, and results can be totalled per page. Admin screens only; no cache purge needed.
 
 = 1.2.0 =
 Cloaked same-site links are now tracked under their real destination. Adds two tables and a WP-Cron job; purge your page cache after updating so the new tokens appear.

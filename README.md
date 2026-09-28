@@ -56,7 +56,7 @@ The plugin is listed in the [WordPress.org plugin directory](https://wordpress.o
 
 ## Screenshots
 
-**Report**: date range, host filter, search, summary cards and the sortable link table.
+**Report**: date range, host filter, search, grouping, summary cards and the sortable link table.
 
 ![Report screen](wp-org-assets/screenshot-1.png)
 
@@ -134,7 +134,7 @@ Links are registered the first time a post renders uncached, so if you run a pag
 
 ## Admin screens
 
-- **Report**: date presets or a custom range, host filter, search by source title (published posts only) or by destination URL/label, summary stat cards, sortable table, per-post "See all links" pin, CSV export (with spreadsheet formula-injection guard).
+- **Report**: date presets or a custom range, host filter, one search box (All: each word in the source title, destination URL or label; or narrowed to Source content or Destination; pasted URLs match), group by link or by page, summary stat cards, sortable table, per-post "See all links" pin, CSV export (with spreadsheet formula-injection guard).
 - **Labels**: manual labels per destination URL, overriding the auto-captured anchor text.
 - **Settings** (administrators): master switch, excluded roles, internal hosts, retention window, rate limiter, uninstall behaviour.
 - **Status** (administrators): schema version, cron and limiter health, environment.
