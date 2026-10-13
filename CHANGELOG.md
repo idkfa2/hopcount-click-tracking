@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.1 - 2026-10-13
+
+- Report host filter: a free-text input with `<datalist>` suggestions replaces the drop-down. The drop-down took the first 200 hosts alphabetically (`SELECT DISTINCT ... ORDER BY destination_host LIMIT 200`), so on a site with more hosts the busiest ones could be unreachable, and a `host` value outside the list had no `<option>` and was dropped when the form was submitted again. Suggestions are the hosts clicked in the selected range, most-clicked first, up to 500 (`OCTK_Reporting::hosts( $start_utc, $end_utc )`); the input always keeps the chosen host. A pasted URL is reduced to its host; other non-hostname input is ignored as before.
+- CSV export: `source_title` is decoded from HTML (`get_the_title()` returns texturized HTML such as `&#038;` and `&#8217;`) before the formula-injection guard, in both link and page exports.
+- Resolver: when the day's probe counter is created, every older `octk_resolve_daily_YYYYMMDD` option is deleted, not only yesterday's (a day without probes used to strand its predecessor).
+- Resolver: a redirect with a repeated `Location` header was cast to the string `"Array"` before the array check; the first value is now used.
+- Resolver: `octk_verify_probe_header()` checks for a well-formed header before `octk_resolve_enabled()`, so requests without a probe header (every ordinary page view, from `template_redirect`) skip the two table readiness queries.
+
 ## 1.3.0 - 2026-09-28
 
 - Report search has a new default mode, **All**: every search word must appear in the source post title (published only), the destination URL or the resolved label, and different words may match in different places ("joe rogan hone" = Hone links on Joe Rogan posts). It joins published titles in the report query, so it has no 100-post cap. **Source content** and **Destination** keep their previous behaviour; `search_in` now defaults to `all`.

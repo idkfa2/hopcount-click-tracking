@@ -160,10 +160,7 @@ function octk_report_request(): array {
 	$start_utc = $from->setTime( 0, 0 )->setTimezone( new DateTimeZone( 'UTC' ) )->format( 'Y-m-d H:i:s' );
 	$end_utc   = $to->setTime( 0, 0 )->modify( '+1 day' )->setTimezone( new DateTimeZone( 'UTC' ) )->format( 'Y-m-d H:i:s' );
 
-	$host = sanitize_text_field( wp_unslash( $_GET['host'] ?? '' ) );
-	if ( '' !== $host && 1 !== preg_match( '/^[a-z0-9.-]+$/i', $host ) ) {
-		$host = '';
-	}
+	$host = octk_sanitize_report_host( sanitize_text_field( wp_unslash( $_GET['host'] ?? '' ) ) );
 
 	$search       = octk_sanitize_search( wp_unslash( $_GET['search'] ?? '' ) ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- octk_sanitize_search() sanitizes.
 	$search_error = '';
@@ -216,7 +213,7 @@ function octk_report_request(): array {
 	$args = array(
 		'start_utc'          => $start_utc,
 		'end_utc'            => $end_utc,
-		'host'               => strtolower( $host ),
+		'host'               => $host,
 		'source_ids'         => $source_ids,
 		'destination_search' => $destination_search,
 		'all_search'         => $all_search,
@@ -456,8 +453,22 @@ function octk_export_url( array $request ): string {
 	return wp_nonce_url( add_query_arg( $params, admin_url( 'admin-post.php' ) ), 'octk_export_csv' );
 }
 
+/**
+ * Host filter value from free text: lowercase hostname, or '' (all hosts).
+ * A pasted URL is reduced to its host; anything else that is not a
+ * hostname is dropped.
+ */
+function octk_sanitize_report_host( string $raw ): string {
+	$host = strtolower( trim( $raw ) );
+	if ( false !== strpos( $host, '/' ) ) {
+		$url  = 1 === preg_match( '#^[a-z][a-z0-9+.-]*://#', $host ) ? $host : 'http://' . ltrim( $host, '/' );
+		$host = (string) wp_parse_url( $url, PHP_URL_HOST );
+	}
+	return 1 === preg_match( '/^[a-z0-9.-]+$/', $host ) ? $host : '';
+}
+
 function octk_report_filters_form( array $request ): void {
-	$hosts = OCTK_Reporting::hosts();
+	$hosts = OCTK_Reporting::hosts( $request['args']['start_utc'], $request['args']['end_utc'] );
 	echo '<form method="get" class="octk-filters">';
 	echo '<input type="hidden" name="page" value="octk-report" />';
 	if ( $request['source_id'] > 0 ) {
@@ -483,11 +494,18 @@ function octk_report_filters_form( array $request ): void {
 	echo '</span>';
 	// The range toggle script is enqueued via octk_admin_enqueue_assets().
 
-	echo '<label for="octk-host">' . esc_html__( 'Host', 'hopcount-click-tracking' ) . '</label> <select name="host" id="octk-host"><option value="">' . esc_html__( 'All hosts', 'hopcount-click-tracking' ) . '</option>';
+	// Free text with suggestions: any host can be typed, and the chosen one
+	// stays in the input whatever the suggestions for this range are.
+	printf(
+		'<label for="octk-host">%s</label> <input type="search" name="host" id="octk-host" list="octk-host-list" value="%s" placeholder="%s" autocomplete="off" spellcheck="false" /><datalist id="octk-host-list">',
+		esc_html__( 'Host', 'hopcount-click-tracking' ),
+		esc_attr( $request['args']['host'] ),
+		esc_attr__( 'All hosts', 'hopcount-click-tracking' )
+	);
 	foreach ( $hosts as $host ) {
-		printf( '<option value="%s"%s>%s</option>', esc_attr( $host ), selected( $request['args']['host'], $host, false ), esc_html( $host ) );
+		printf( '<option value="%s"></option>', esc_attr( $host ) );
 	}
-	echo '</select> ';
+	echo '</datalist> ';
 
 	echo '<label for="octk-search-in">' . esc_html__( 'Search', 'hopcount-click-tracking' ) . '</label> <select name="search_in" id="octk-search-in" aria-label="' . esc_attr__( 'Search in', 'hopcount-click-tracking' ) . '">';
 	$search_ins = array(

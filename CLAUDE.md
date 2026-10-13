@@ -7,7 +7,7 @@ Site-specific deployment material is not part of this repo; a gitignored `local/
 ## Layout
 
 - `hopcount-click-tracking/` - **the plugin. Only this folder is ever deployed.**
-- `tests/` - PHPUnit suite (runs inside wp-env tests container); 225 tests / 1229 assertions
+- `tests/` - PHPUnit suite (runs inside wp-env tests container); run it for current counts
 - `wp-org-assets/` - banner/icon/screenshots for the wp.org SVN `assets/` dir (not part of the plugin)
 - `README.md` - user-facing docs (install, settings, filters); `CHANGELOG.md` - release notes
 
@@ -50,6 +50,7 @@ Click Tracking menu in wp-admin: **Report** (presets + custom range, host filter
 ## Gotchas
 
 - Auto labels are captured only on uncached renders - a full cache purge is the backfill trigger on already-cached pages.
+- Uncached renders may probe never-seen same-site links (up to 3 probes / 3 s per render, `includes/resolve.php`); WP-Cron does the rest and all refreshes.
 - Listener loads on a static front page (`is_singular()` is true) - intentional no-op, do not tighten the enqueue.
 - The endpoint is intentionally public and POST-only; the master switch (Settings) 403s beacons instantly, including from cached pages.
 - Multisite is refused at activation.

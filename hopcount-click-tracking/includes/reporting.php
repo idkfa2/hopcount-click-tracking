@@ -16,6 +16,9 @@ class OCTK_Reporting {
 	const PER_PAGE_CHOICES = array( 25, 50, 100 );
 	const MAX_SOURCE_IDS   = 100;
 
+	/** Most host suggestions offered under the Report's host input. */
+	const HOST_SUGGESTIONS = 500;
+
 	/**
 	 * Longest accepted search, in characters. Matches the destination_url
 	 * column so any stored URL can be pasted whole; longer input is rejected
@@ -326,14 +329,28 @@ class OCTK_Reporting {
 	}
 
 	/**
-	 * Distinct destination hosts for the filter control (bounded).
+	 * Host suggestions for the filter input: hosts clicked in the UTC range,
+	 * most-clicked first, bounded. Suggestions only; the input accepts any
+	 * host, so the bound never hides one.
 	 *
 	 * @return string[]
 	 */
-	public static function hosts(): array {
+	public static function hosts( string $start_utc, string $end_utc, int $limit = self::HOST_SUGGESTIONS ): array {
 		global $wpdb;
-		$links = octk_table_links();
-		$rows  = $wpdb->get_col( $wpdb->prepare( 'SELECT DISTINCT destination_host FROM %i ORDER BY destination_host ASC LIMIT 200', $links ) );
+		$rows = $wpdb->get_col(
+			$wpdb->prepare(
+				'SELECT l.destination_host FROM %i c JOIN %i l ON l.id = c.link_id
+				WHERE c.bucket_start_utc >= %s AND c.bucket_start_utc < %s
+				GROUP BY l.destination_host
+				ORDER BY SUM(c.hits) DESC, l.destination_host ASC
+				LIMIT %d',
+				octk_table_clicks(),
+				octk_table_links(),
+				$start_utc,
+				$end_utc,
+				max( 1, $limit )
+			)
+		);
 		return is_array( $rows ) ? $rows : array();
 	}
 

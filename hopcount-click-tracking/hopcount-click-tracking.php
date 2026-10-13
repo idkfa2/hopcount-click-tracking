@@ -3,7 +3,7 @@
  * Plugin Name: Hopcount Click Tracking
  * Plugin URI: https://github.com/idkfa2/hopcount-click-tracking
  * Description: Privacy-friendly outbound and affiliate click tracking. Server-side link pre-registration, token-only click endpoint, hourly aggregate counts, no cookies or per-click rows.
- * Version: 1.3.0
+ * Version: 1.3.1
  * Requires at least: 6.5
  * Requires PHP: 8.0
  * Author: aph5
@@ -17,7 +17,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'OCTK_VERSION', '1.3.0' );
+define( 'OCTK_VERSION', '1.3.1' );
 define( 'OCTK_PLUGIN_FILE', __FILE__ );
 define( 'OCTK_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 

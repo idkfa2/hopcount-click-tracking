@@ -904,4 +904,55 @@ class OCTK_Resolve_Test extends WP_UnitTestCase {
 		global $wpdb;
 		$this->assertSame( 0, (int) $wpdb->get_var( 'SELECT COUNT(*) FROM ' . octk_table_redirects() ) );
 	}
+
+	/* ---- 1.3.1 ---- */
+
+	public function test_old_daily_counters_are_all_deleted_but_not_today_or_later() {
+		global $wpdb;
+		$today = octk_resolve_daily_key();
+		$old   = array( 'octk_resolve_daily_20260914', 'octk_resolve_daily_' . gmdate( 'Ymd', time() - 3 * DAY_IN_SECONDS ) );
+		$later = 'octk_resolve_daily_' . gmdate( 'Ymd', time() + DAY_IN_SECONDS );
+		foreach ( array_merge( $old, array( $later ) ) as $name ) {
+			add_option( $name, 5, '', false );
+		}
+		add_option( 'octk_resolve_dailyx', 1, '', false ); // "_" must not act as a LIKE wildcard
+		try {
+			$this->assertTrue( octk_resolve_reserve_request() );
+			foreach ( $old as $name ) {
+				$this->assertFalse( get_option( $name ), $name );
+				$this->assertNull( $wpdb->get_var( $wpdb->prepare( 'SELECT option_value FROM %i WHERE option_name = %s', $wpdb->options, $name ) ), $name );
+			}
+			$this->assertSame( 1, octk_resolve_probes_today(), $today );
+			$this->assertSame( '5', (string) get_option( $later ), 'a key newer than today is never deleted' );
+			$this->assertSame( '1', (string) get_option( 'octk_resolve_dailyx' ) );
+		} finally {
+			delete_option( $later );
+			delete_option( 'octk_resolve_dailyx' );
+		}
+	}
+
+	public function test_probe_header_absent_skips_readiness_checks() {
+		// octk_resolve_enabled() runs the readiness checks; the filter inside it
+		// must never be reached for a request without a well-formed header.
+		$filter = static function () {
+			throw new LogicException( 'octk_resolve_enabled must not be consulted without a header' );
+		};
+		add_filter( 'octk_resolve_enabled', $filter );
+		try {
+			$this->assertNull( $this->with_server( array( 'HTTP_HOST' => 'example.org', 'REQUEST_URI' => '/x' ), 'octk_verify_probe_header' ) );
+			$this->assertNull( $this->with_server( array( 'HTTP_HOST' => 'example.org', 'REQUEST_URI' => '/x', 'HTTP_X_OCTK_RESOLVE' => 'garbage' ), 'octk_verify_probe_header' ) );
+		} finally {
+			remove_filter( 'octk_resolve_enabled', $filter );
+		}
+	}
+
+	public function test_repeated_location_header_uses_the_first_value() {
+		$this->respond_with( array(
+			'/go/dup' => self::response( 302, array( 'location' => array( 'https://first.example/p', 'https://second.example/q' ) ) ),
+		) );
+		$result = octk_probe( $this->u( '/go/dup' ) );
+		$this->assertSame( 'outbound', $result['verdict'] );
+		$this->assertSame( 'https://first.example/p', $result['destination_url'] );
+		$this->assertSame( 1, $result['requests'] );
+	}
 }

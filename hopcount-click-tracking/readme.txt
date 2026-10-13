@@ -3,7 +3,7 @@ Contributors: aph5
 Tags: outbound links, affiliate, click tracking, analytics, privacy
 Requires at least: 6.5
 Tested up to: 7.1
-Stable tag: 1.3.0
+Stable tag: 1.3.1
 Requires PHP: 8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -117,6 +117,11 @@ Data is kept by default. Tick the option on the Settings screen if you want the 
 
 == Changelog ==
 
+= 1.3.1 =
+* The Report's host filter is now a text box with suggestions (the most-clicked hosts in the selected range). The old drop-down listed only the first 200 hosts alphabetically, so busy hosts late in the alphabet could not be chosen, and a host outside that list was lost when the form was submitted again. Any host can be typed, and a pasted URL is reduced to its host.
+* CSV export: source titles are plain text. "&" no longer appears as "&#038;", and curly quotes are real characters. The spreadsheet formula guard still applies.
+* Cloaked-link checks: old daily request counters are now cleaned up, not just yesterday's; a redirect that sends the Location header twice now uses the first value instead of the text "Array"; ordinary page views no longer run two database checks looking for a probe signature they do not carry.
+
 = 1.3.0 =
 * Report search now looks everywhere by default: the new "All" mode matches each word against the source post title, the destination URL or the link label, so "hone" finds every Hone Health link and "joe rogan hone" finds the Hone links on Joe Rogan posts. "Source content" and "Destination" remain as narrower options.
 * A full affiliate URL pasted into the search box now matches. Previously the percent-encoded parts (%3A, %2F) were stripped before searching. Searches longer than 2048 characters are refused rather than shortened.
@@ -160,6 +165,9 @@ Data is kept by default. Tick the option on the Settings screen if you want the 
 * Initial private releases: token annotation, beacon listener, REST endpoint, hourly aggregates, Report, Labels, Settings and Status screens, dashboard widget, retention, rate limiter, CSV export.
 
 == Upgrade Notice ==
+
+= 1.3.1 =
+Report host filter reaches every host, CSV titles are plain text, and small cloaked-link fixes. No cache purge needed.
 
 = 1.3.0 =
 Report search covers titles, destinations and labels by default, pasted URLs match, and results can be totalled per page. Admin screens only; no cache purge needed.

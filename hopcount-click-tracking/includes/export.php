@@ -119,6 +119,10 @@ function octk_export_csv_stream( array $args ): void {
 			$post  = get_post( (int) $row->source_id );
 			/* translators: %d: post ID. */
 			$title = $post ? get_the_title( $post ) : sprintf( __( '(deleted post #%d)', 'hopcount-click-tracking' ), (int) $row->source_id );
+			// get_the_title() is HTML (texturized, "&" as "&#038;"); a CSV cell
+			// wants the text. Decoded before octk_csv_row() applies the formula
+			// guard, so a title that decodes to a leading "=" is still neutralised.
+			$title = html_entity_decode( $title, ENT_QUOTES | ENT_HTML5, 'UTF-8' );
 
 			$last_utc  = (string) $row->last_bucket;
 			$last_site = '';

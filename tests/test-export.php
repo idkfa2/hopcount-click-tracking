@@ -183,4 +183,24 @@ class OCTK_Export_Test extends WP_UnitTestCase {
 		$this->assertStringContainsString( '_wpnonce=', $url );
 		$this->assertStringNotContainsString( 'per_page', $url );
 	}
+
+	public function test_csv_titles_are_decoded_text_and_still_formula_guarded() {
+		$amp     = self::factory()->post->create( array( 'post_title' => 'Title & Company' ) );
+		$quote   = self::factory()->post->create( array( 'post_title' => "Joe's picks" ) );
+		$formula = self::factory()->post->create( array( 'post_title' => '=Free & Clear' ) );
+		$this->seed( $amp, 'https://t1.example/a', array( '2026-08-02 10:00:00' => 3 ) );
+		$this->seed( $quote, 'https://t2.example/b', array( '2026-08-02 10:00:00' => 2 ) );
+		$this->seed( $formula, 'https://t3.example/c', array( '2026-08-02 10:00:00' => 1 ) );
+
+		foreach ( array( 'link', 'page' ) as $group ) {
+			$lines = explode( "\n", trim( substr( $this->stream( $this->args( array( 'group' => $group ) ) ), 3 ) ) );
+			$titles = array();
+			foreach ( array_slice( $lines, 1 ) as $line ) {
+				$row      = str_getcsv( $line, ',', '"', '' );
+				$titles[] = $row[1];
+			}
+			$this->assertSame( array( 'Title & Company', "Joe\u{2019}s picks", "'=Free & Clear" ), $titles, $group );
+			$this->assertStringNotContainsString( '&#', implode( '', $titles ), $group );
+		}
+	}
 }

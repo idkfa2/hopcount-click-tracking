@@ -393,11 +393,13 @@ function octk_probe_header_value( string $logical_url, string $via ): string {
  * expired or mismatched headers, which are ignored entirely.
  */
 function octk_verify_probe_header(): ?string {
-	if ( ! octk_resolve_enabled() ) {
-		return null;
-	}
+	// Header first: ordinary requests carry none and must not pay for the
+	// readiness checks in octk_resolve_enabled().
 	$raw = isset( $_SERVER['HTTP_X_OCTK_RESOLVE'] ) ? (string) $_SERVER['HTTP_X_OCTK_RESOLVE'] : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- verified by HMAC below.
 	if ( 1 !== preg_match( '/^(\d{1,12})\.(origin|public)\.([0-9a-f]{64})$/', $raw, $m ) ) {
+		return null;
+	}
+	if ( ! octk_resolve_enabled() ) {
 		return null;
 	}
 	$time = (int) $m[1];
@@ -729,6 +731,28 @@ function octk_resolve_cap_reached(): bool {
 }
 
 /**
+ * Delete every daily counter older than $today_key, not just yesterday's
+ * (a day without probes would otherwise strand its predecessor forever).
+ * Keys are fixed-width Ymd, so string order is date order; only strictly
+ * older keys go, so a request straddling midnight cannot delete the new
+ * day's counter. delete_option() keeps the options cache in step.
+ */
+function octk_resolve_delete_old_daily_counters( string $today_key ): void {
+	global $wpdb;
+	$names = $wpdb->get_col(
+		$wpdb->prepare(
+			'SELECT option_name FROM %i WHERE option_name LIKE %s AND option_name < %s',
+			$wpdb->options,
+			$wpdb->esc_like( 'octk_resolve_daily_' ) . '%',
+			$today_key
+		)
+	);
+	foreach ( (array) $names as $name ) {
+		delete_option( $name );
+	}
+}
+
+/**
  * Reserve one HTTP request against the daily cap (every hop counts).
  * One conditional UPDATE on the option row: the increment and the limit
  * check are a single statement, so overlapping workers cannot overwrite
@@ -744,7 +768,7 @@ function octk_resolve_reserve_request(): bool {
 	}
 	if ( false === get_option( $key, false ) ) {
 		add_option( $key, 0, '', false ); // idempotent; a concurrent add is absorbed.
-		delete_option( 'octk_resolve_daily_' . gmdate( 'Ymd', time() - DAY_IN_SECONDS ) );
+		octk_resolve_delete_old_daily_counters( $key );
 	}
 	$affected = $wpdb->query(
 		$wpdb->prepare(
@@ -1165,10 +1189,12 @@ function octk_probe( string $logical_url, float $budget_seconds = OCTK_RESOLVE_P
 		$code = (int) wp_remote_retrieve_response_code( $response );
 
 		if ( in_array( $code, array( 301, 302, 303, 307, 308 ), true ) ) {
-			$location = (string) wp_remote_retrieve_header( $response, 'location' );
+			// A repeated header arrives as an array: take the first, then cast.
+			$location = wp_remote_retrieve_header( $response, 'location' );
 			if ( is_array( $location ) ) {
-				$location = (string) reset( $location );
+				$location = reset( $location );
 			}
+			$location = (string) $location;
 			if ( '' === $location ) {
 				return array( 'verdict' => 'internal', 'requests' => $requests );
 			}
