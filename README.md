@@ -169,6 +169,7 @@ Links are registered the first time a post renders uncached, so if you run a pag
 | `octk_resolve_daily_cap` | `10000` | Maximum probe requests per UTC day. |
 | `octk_resolve_probe_origin` | `null` | Explicit origin route `array( 'scheme' => 'http', 'host' => '10.0.0.5', 'port' => 80 )`, tried first. |
 | `octk_resolve_probe_sslverify` | `true` | Verify the origin certificate on `https` origin candidates. |
+| `octk_export_snapshot` | `true` | Read all CSV export rows from one consistent database snapshot. Return false where `START TRANSACTION` is unsafe or unsupported (e.g. read/write-splitting proxies); the export then reads in batches without one. |
 
 Action: `octk_resolution_changed( string $url, array $old, array $new, int[] $post_ids )` fires when a same-site link's tracked destination changes, after the post cache and WP Rocket have been purged, so CDN purges can hook in.
 

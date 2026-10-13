@@ -209,7 +209,9 @@ class OCTK_Reporting {
 			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $sql is placeholder-only SQL (row_select_sql); tables and values are prepared.
 			$wpdb->prepare( $sql, array_merge( $from_values, $values, array( $per_page, $offset ) ) )
 		);
-		if ( ! is_array( $rows ) ) {
+		// get_results() answers a failed query with an empty array, not null:
+		// last_error (reset per query) is what tells failure from no rows.
+		if ( ! is_array( $rows ) || '' !== $wpdb->last_error ) {
 			octk_log( 'report query failed: ' . $wpdb->last_error );
 			return null;
 		}
@@ -291,7 +293,9 @@ class OCTK_Reporting {
 			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $sql is placeholder-only SQL (row_select_sql); tables and values are prepared.
 			$wpdb->prepare( $sql, array_merge( $from_values, $values, array( $limit, $offset ) ) )
 		);
-		if ( ! is_array( $rows ) ) {
+		// get_results() answers a failed query with an empty array, not null:
+		// last_error (reset per query) is what tells failure from no rows.
+		if ( ! is_array( $rows ) || '' !== $wpdb->last_error ) {
 			octk_log( 'export query failed: ' . $wpdb->last_error );
 			return null;
 		}

@@ -3,7 +3,7 @@ Contributors: aph5
 Tags: outbound links, affiliate, click tracking, analytics, privacy
 Requires at least: 6.5
 Tested up to: 7.1
-Stable tag: 1.3.1
+Stable tag: 1.3.2
 Requires PHP: 8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -117,6 +117,11 @@ Data is kept by default. Tick the option on the Settings screen if you want the 
 
 == Changelog ==
 
+= 1.3.2 =
+* CSV export reads every matching row from one consistent view of the database. Before, an export of more than 1,000 rows was read in pieces, and a click (or a title or label edit, or the retention cleanup) landing between two pieces could repeat one row and leave out another. Row order and click totals now reflect the moment the export started; post titles and links are current.
+* Large exports keep memory use low: rows are held in a temporary file while the export is prepared.
+* If the report query fails part-way, the export now says so instead of ending early as if there were no more rows. The Report table shows its error message in the same case instead of an empty page.
+
 = 1.3.1 =
 * The Report's host filter is now a text box with suggestions (the most-clicked hosts in the selected range). The old drop-down listed only the first 200 hosts alphabetically, so busy hosts late in the alphabet could not be chosen, and a host outside that list was lost when the form was submitted again. Any host can be typed, and a pasted URL is reduced to its host.
 * CSV export: source titles are plain text. "&" no longer appears as "&#038;", and curly quotes are real characters. The spreadsheet formula guard still applies.
@@ -165,6 +170,9 @@ Data is kept by default. Tick the option on the Settings screen if you want the 
 * Initial private releases: token annotation, beacon listener, REST endpoint, hourly aggregates, Report, Labels, Settings and Status screens, dashboard widget, retention, rate limiter, CSV export.
 
 == Upgrade Notice ==
+
+= 1.3.2 =
+CSV exports over 1,000 rows no longer repeat or skip rows when clicks arrive mid-export. Admin only; no cache purge needed.
 
 = 1.3.1 =
 Report host filter reaches every host, CSV titles are plain text, and small cloaked-link fixes. No cache purge needed.

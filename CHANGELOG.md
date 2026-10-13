@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.2 - 2026-10-13
+
+- CSV export: every batch query runs inside one `START TRANSACTION WITH CONSISTENT SNAPSHOT` (REPEATABLE READ), so a click, a title or label edit that changes which rows match, or a retention prune committed by another request between two 1,000-row OFFSET batches can no longer repeat one row and skip another. On a copy of FLH's data, 50 links gaining clicks between the two batches of a 1,210-row export produced 24 repeated (and 24 missing) rows without the snapshot and none with it.
+- The export is now two phases. Selection (`octk_export_select()`) runs only raw SQL inside the snapshot and spools the raw rows to `php://temp/maxmemory:2MB`, so memory stays bounded at any export size and no snapshot-era post data reaches a persistent object cache. Formatting (`octk_export_csv_write()`) runs after `COMMIT`, reads the spool back in batches and resolves titles and permalinks with the usual APIs: the row set, order and totals are frozen at the snapshot, displayed titles and permalinks are current. The transaction no longer covers the download itself.
+- Selection happens before any response header: a failed query or temp spool (open or write) ends in an error page, not a partial file. `COMMIT` and closing the spool are in `finally` blocks.
+- Without a snapshot the export behaves as before: when the new filter `octk_export_snapshot` returns false (for example behind a read/write-splitting database proxy), when the database refuses one, or when a transaction is already open on the connection. `SET TRANSACTION` fails in that last case, and `START TRANSACTION` is then never issued, because it would silently commit the open transaction.
+- `OCTK_Reporting::query_rows()` and `export_rows()` now treat a query error as a failure. `wpdb::get_results()` answers a failed query with an empty array, so a failed export batch used to end the file early as if no rows were left, and a failed Report query showed an empty table.
+
 ## 1.3.1 - 2026-10-13
 
 - Report host filter: a free-text input with `<datalist>` suggestions replaces the drop-down. The drop-down took the first 200 hosts alphabetically (`SELECT DISTINCT ... ORDER BY destination_host LIMIT 200`), so on a site with more hosts the busiest ones could be unreachable, and a `host` value outside the list had no `<option>` and was dropped when the form was submitted again. Suggestions are the hosts clicked in the selected range, most-clicked first, up to 500 (`OCTK_Reporting::hosts( $start_utc, $end_utc )`); the input always keeps the chosen host. A pasted URL is reduced to its host; other non-hostname input is ignored as before.

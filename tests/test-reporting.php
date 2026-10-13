@@ -186,4 +186,19 @@ class OCTK_Reporting_Test extends WP_UnitTestCase {
 		delete_transient( 'octk_status_counts' );
 		$this->assertSame( 2, OCTK_Reporting::status_counts()->links );
 	}
+
+	public function test_failed_row_query_is_null_not_an_empty_page() {
+		$this->seed( $this->post_a, 'https://m1.example/a', array( '2026-08-02 10:00:00' => 5 ) );
+		$break = static fn( $query ) => false !== strpos( $query, 'LIMIT' ) ? 'SELECT broken FROM' : $query;
+		add_filter( 'query', $break );
+		$suppress = $GLOBALS['wpdb']->suppress_errors( true );
+		try {
+			$this->assertNull( OCTK_Reporting::query_rows( $this->args() ) );
+			$this->assertNull( OCTK_Reporting::export_rows( $this->args(), 10, 0 ) );
+		} finally {
+			$GLOBALS['wpdb']->suppress_errors( $suppress );
+			remove_filter( 'query', $break );
+		}
+		$this->assertNotNull( OCTK_Reporting::export_rows( $this->args(), 10, 0 ) );
+	}
 }

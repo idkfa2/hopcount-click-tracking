@@ -203,4 +203,14 @@ class OCTK_Export_Test extends WP_UnitTestCase {
 			$this->assertStringNotContainsString( '&#', implode( '', $titles ), $group );
 		}
 	}
+
+	public function test_export_never_commits_a_transaction_already_open() {
+		global $wpdb;
+		// The test harness holds an open transaction, as another plugin might.
+		$this->assertSame( 1, (int) $wpdb->get_var( 'SELECT @@in_transaction' ) );
+		$selected = octk_export_select( $this->args() );
+		$this->assertFalse( $selected['snapshot'], 'no START TRANSACTION over an open one' );
+		fclose( $selected['spool'] );
+		$this->assertSame( 1, (int) $wpdb->get_var( 'SELECT @@in_transaction' ), 'the open transaction was not committed' );
+	}
 }

@@ -6,8 +6,10 @@
  * custom range, destination host, all/source/destination search, link or page
  * grouping - passed as GET params to
  * admin-post.php. Rows come from OCTK_Reporting::export_rows() in bounded
- * batches; output is streamed, never buffered whole. Same column policy as
- * the report: no public_token, identity_hash, or internal database ids.
+ * batches inside one consistent snapshot, spooled to a bounded temp stream,
+ * then formatted and streamed (1.3.2, octk_export_select()). Same column
+ * policy as the report: no public_token, identity_hash, or internal
+ * database ids.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -39,6 +41,12 @@ function octk_handle_export_csv(): void {
 			400
 		);
 	}
+	// Selection runs before any header, so a failed query or spool still
+	// ends in a proper error page rather than a half-written download.
+	$selected = octk_export_select( $request['args'] );
+	if ( is_wp_error( $selected ) ) {
+		wp_die( esc_html__( 'The export could not be prepared. Please try again.', 'hopcount-click-tracking' ), '', 500 );
+	}
 	$filename = octk_export_filename( $request );
 
 	nocache_headers();
@@ -46,7 +54,7 @@ function octk_handle_export_csv(): void {
 	header( 'Content-Disposition: attachment; filename="' . $filename . '"' );
 	header( 'X-Content-Type-Options: nosniff' );
 
-	octk_export_csv_stream( $request['args'] );
+	octk_export_csv_write( $request['args'], $selected );
 	exit;
 }
 
@@ -60,19 +68,215 @@ function octk_export_filename( array $request ): string {
 }
 
 /**
- * Stream the CSV body for a validated report request (headers not included,
- * so tests can capture output). Batched; a hard cap of
- * OCTK_EXPORT_BATCH * OCTK_EXPORT_MAX_BATCHES rows is announced in the
- * file rather than applied silently.
+ * Select and stream in one call (headers not included, so tests can capture
+ * output). A failed selection still yields the header row plus an
+ * "aborted" row, never a silent partial file.
  */
 function octk_export_csv_stream( array $args ): void {
-	$out     = fopen( 'php://output', 'w' );
-	$by_page = 'page' === ( $args['group'] ?? 'link' );
+	$selected = octk_export_select( $args );
+	if ( is_wp_error( $selected ) ) {
+		$out = fopen( 'php://output', 'w' );
+		octk_export_csv_header( $out, 'page' === ( $args['group'] ?? 'link' ) );
+		octk_csv_row( $out, array( __( '(export aborted: report query failed)', 'hopcount-click-tracking' ) ) );
+		return;
+	}
+	octk_export_csv_write( $args, $selected );
+}
 
+/**
+ * Selection phase (1.3.2). The export pages with OFFSET, so a click, a
+ * title or label edit, or a retention prune landing between two batch
+ * queries could shift a row across a batch edge and repeat or skip it.
+ * All batch queries therefore run inside one consistent snapshot, and the
+ * raw rows are spooled to php://temp (2 MB in memory, then a temp file that
+ * PHP deletes itself), so memory stays bounded however large the export.
+ *
+ * Nothing but raw SQL runs while the snapshot is open: loading posts here
+ * would write snapshot-era post data into a shared persistent object cache.
+ * Titles and permalinks are resolved after COMMIT, so the row set, order
+ * and totals are frozen at the snapshot while displayed titles and
+ * permalinks are current.
+ *
+ * Without a snapshot (filtered off, the database refuses one, or a
+ * transaction is already open on this connection, which is never
+ * committed from here) the export is the same batched read it was before
+ * 1.3.2.
+ *
+ * @param array $args    Validated report args.
+ * @param array $options Internal and test seams: 'batch' (rows per query),
+ *                       'open_spool' (callable returning a stream or false),
+ *                       'after_batch' (callable run inside the snapshot
+ *                       after each batch; must not touch WordPress caches).
+ * @return array{spool: resource, truncated: bool, snapshot: bool}|WP_Error
+ */
+function octk_export_select( array $args, array $options = array() ) {
+	global $wpdb;
+
+	$batch       = max( 1, (int) ( $options['batch'] ?? OCTK_EXPORT_BATCH ) );
+	$max_rows    = OCTK_EXPORT_BATCH * OCTK_EXPORT_MAX_BATCHES;
+	$open_spool  = $options['open_spool'] ?? static fn() => fopen( 'php://temp/maxmemory:' . ( 2 * MB_IN_BYTES ), 'w+' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- in-memory/temp spool, not a site file.
+	$after_batch = $options['after_batch'] ?? null;
+	$by_page     = 'page' === ( $args['group'] ?? 'link' );
+
+	$spool = $open_spool();
+	if ( ! is_resource( $spool ) ) {
+		octk_log( 'CSV export: spool could not be opened' );
+		return new WP_Error( 'octk_export_spool', 'spool open failed' );
+	}
+
+	$snapshot = octk_export_begin_snapshot();
+	$error    = null;
+	$selected = 0;
+	$full     = false;
+	try {
+		while ( $selected < $max_rows ) {
+			$limit = min( $batch, $max_rows - $selected );
+			$rows  = OCTK_Reporting::export_rows( $args, $limit, $selected );
+			if ( null === $rows ) {
+				$error = new WP_Error( 'octk_export_query', 'report query failed' );
+				break;
+			}
+			foreach ( $rows as $row ) {
+				$record = $by_page
+					? array( $row->source_id, $row->source_url, $row->links, $row->clicks, $row->last_bucket )
+					: array( $row->source_id, $row->source_url, $row->destination_host, $row->destination_url, $row->label ?? '', $row->clicks, $row->last_bucket );
+				if ( ! fputcsv( $spool, array_map( 'strval', $record ), ',', '"', '' ) ) {
+					octk_log( 'CSV export: spool write failed (temp directory full or not writable?)' );
+					$error = new WP_Error( 'octk_export_spool', 'spool write failed' );
+					break 2;
+				}
+			}
+			$selected += count( $rows );
+			$full      = count( $rows ) === $limit;
+			if ( null !== $after_batch ) {
+				$after_batch( $selected );
+			}
+			if ( ! $full ) {
+				break;
+			}
+		}
+	} finally {
+		if ( $snapshot ) {
+			$wpdb->query( 'COMMIT' ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery -- ends the read-only snapshot opened above; no data is written.
+		}
+	}
+
+	if ( null !== $error ) {
+		fclose( $spool ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- temp spool.
+		return $error;
+	}
+	$truncated = $full && $selected >= $max_rows;
+	if ( $truncated ) {
+		octk_log( 'CSV export truncated at ' . $max_rows . ' rows' );
+	}
+	return array(
+		'spool'     => $spool,
+		'truncated' => $truncated,
+		'snapshot'  => $snapshot,
+	);
+}
+
+/**
+ * Open a consistent-snapshot read transaction for the export. False (and
+ * nothing started) when filtered off or refused. SET TRANSACTION fails
+ * while a transaction is already open on this connection; START
+ * TRANSACTION would then silently commit someone else's work, so it is
+ * never issued in that case.
+ */
+function octk_export_begin_snapshot(): bool {
+	global $wpdb;
+	if ( ! (bool) apply_filters( 'octk_export_snapshot', true ) ) {
+		return false;
+	}
+	$suppress = $wpdb->suppress_errors( true );
+	// phpcs:disable WordPress.DB.DirectDatabaseQuery -- transaction control statements, no table data.
+	$ok = false !== $wpdb->query( 'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ' )
+		&& false !== $wpdb->query( 'START TRANSACTION WITH CONSISTENT SNAPSHOT' );
+	// phpcs:enable
+	$wpdb->suppress_errors( $suppress );
+	if ( ! $ok ) {
+		octk_log( 'CSV export: no consistent snapshot (' . $wpdb->last_error . '); exporting without one' );
+	}
+	return $ok;
+}
+
+/**
+ * Formatting phase: read the spool back in batches, resolve titles and
+ * permalinks with the normal WordPress APIs (the snapshot is closed by
+ * now), and stream the CSV. Always closes the spool.
+ *
+ * @param array $selected Result of octk_export_select().
+ */
+function octk_export_csv_write( array $args, array $selected ): void {
+	$spool   = $selected['spool'];
+	$by_page = 'page' === ( $args['group'] ?? 'link' );
+	try {
+		$out = fopen( 'php://output', 'w' );
+		octk_export_csv_header( $out, $by_page );
+		$site_tz = wp_timezone();
+
+		rewind( $spool );
+		do {
+			$records = array();
+			while ( count( $records ) < OCTK_EXPORT_BATCH ) {
+				$record = fgetcsv( $spool, null, ',', '"', '' );
+				if ( ! is_array( $record ) || array( null ) === $record ) {
+					break;
+				}
+				$records[] = $record;
+			}
+			if ( empty( $records ) ) {
+				break;
+			}
+
+			if ( function_exists( '_prime_post_caches' ) ) {
+				_prime_post_caches( array_unique( array_map( static fn( $r ) => (int) $r[0], $records ) ), false, false );
+			}
+
+			foreach ( $records as $record ) {
+				$source_id = (int) $record[0];
+				$post      = get_post( $source_id );
+				/* translators: %d: post ID. */
+				$title = $post ? get_the_title( $post ) : sprintf( __( '(deleted post #%d)', 'hopcount-click-tracking' ), $source_id );
+				// get_the_title() is HTML (texturized, "&" as "&#038;"); a CSV cell
+				// wants the text. Decoded before octk_csv_row() applies the formula
+				// guard, so a title that decodes to a leading "=" is still neutralised.
+				$title      = html_entity_decode( $title, ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+				$source_url = $post ? get_permalink( $post ) : $record[1];
+
+				$last_utc  = $by_page ? $record[4] : $record[6];
+				$last_site = '';
+				$bucket    = DateTimeImmutable::createFromFormat( 'Y-m-d H:i:s', $last_utc, new DateTimeZone( 'UTC' ) );
+				if ( false !== $bucket ) {
+					$last_site = $bucket->setTimezone( $site_tz )->format( 'Y-m-d H:i:s' );
+				}
+
+				if ( $by_page ) {
+					octk_csv_row( $out, array( $source_id, $title, $source_url, (int) $record[2], (int) $record[3], $last_utc, $last_site ) );
+					continue;
+				}
+				// $record: source_id, source_url, destination_host, destination_url, label, clicks, last_bucket.
+				octk_csv_row( $out, array( $source_id, $title, $source_url, $record[2], $record[3], (int) $record[5], $last_utc, $last_site, $record[4] ) );
+			}
+		} while ( count( $records ) === OCTK_EXPORT_BATCH );
+
+		if ( $selected['truncated'] ) {
+			/* translators: %d: maximum number of exported rows. */
+			octk_csv_row( $out, array( sprintf( __( '(export truncated at %d rows - narrow the filters)', 'hopcount-click-tracking' ), OCTK_EXPORT_BATCH * OCTK_EXPORT_MAX_BATCHES ) ) );
+		}
+	} finally {
+		fclose( $spool ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- temp spool.
+	}
+}
+
+/**
+ * UTF-8 BOM plus the column header row. Machine-readable column
+ * identifiers: deliberately NOT translated.
+ */
+function octk_export_csv_header( $out, bool $by_page ): void {
 	// UTF-8 BOM so Excel detects the encoding.
 	fwrite( $out, "\xEF\xBB\xBF" ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- streaming to php://output, not the filesystem.
 
-	// Machine-readable column identifiers: deliberately NOT translated.
 	if ( $by_page ) {
 		octk_csv_row( $out, array(
 			'source_post_id',
@@ -83,88 +287,20 @@ function octk_export_csv_stream( array $args ): void {
 			'last_activity_utc',
 			'last_activity_site_tz',
 		) );
-	} else {
-		// 'label' is deliberately LAST: existing consumers' column positions must not shift.
-		octk_csv_row( $out, array(
-			'source_post_id',
-			'source_title',
-			'source_url',
-			'destination_host',
-			'destination_url',
-			'clicks',
-			'last_activity_utc',
-			'last_activity_site_tz',
-			'label',
-		) );
+		return;
 	}
-
-	$site_tz = wp_timezone();
-
-	for ( $batch = 0; $batch < OCTK_EXPORT_MAX_BATCHES; $batch++ ) {
-		$rows = OCTK_Reporting::export_rows( $args, OCTK_EXPORT_BATCH, $batch * OCTK_EXPORT_BATCH );
-		if ( null === $rows ) {
-			octk_csv_row( $out, array( __( '(export aborted: report query failed)', 'hopcount-click-tracking' ) ) );
-			return;
-		}
-		if ( empty( $rows ) ) {
-			return;
-		}
-
-		$ids = array_unique( array_map( static fn( $r ) => (int) $r->source_id, $rows ) );
-		if ( function_exists( '_prime_post_caches' ) ) {
-			_prime_post_caches( $ids, false, false );
-		}
-
-		foreach ( $rows as $row ) {
-			$post  = get_post( (int) $row->source_id );
-			/* translators: %d: post ID. */
-			$title = $post ? get_the_title( $post ) : sprintf( __( '(deleted post #%d)', 'hopcount-click-tracking' ), (int) $row->source_id );
-			// get_the_title() is HTML (texturized, "&" as "&#038;"); a CSV cell
-			// wants the text. Decoded before octk_csv_row() applies the formula
-			// guard, so a title that decodes to a leading "=" is still neutralised.
-			$title = html_entity_decode( $title, ENT_QUOTES | ENT_HTML5, 'UTF-8' );
-
-			$last_utc  = (string) $row->last_bucket;
-			$last_site = '';
-			$bucket    = DateTimeImmutable::createFromFormat( 'Y-m-d H:i:s', $last_utc, new DateTimeZone( 'UTC' ) );
-			if ( false !== $bucket ) {
-				$last_site = $bucket->setTimezone( $site_tz )->format( 'Y-m-d H:i:s' );
-			}
-
-			if ( $by_page ) {
-				octk_csv_row( $out, array(
-					(int) $row->source_id,
-					$title,
-					$post ? get_permalink( $post ) : (string) $row->source_url,
-					(int) $row->links,
-					(int) $row->clicks,
-					$last_utc,
-					$last_site,
-				) );
-				continue;
-			}
-
-			octk_csv_row( $out, array(
-				(int) $row->source_id,
-				$title,
-				$post ? get_permalink( $post ) : (string) $row->source_url,
-				(string) $row->destination_host,
-				(string) $row->destination_url,
-				(int) $row->clicks,
-				$last_utc,
-				$last_site,
-				(string) ( $row->label ?? '' ),
-			) );
-		}
-
-		if ( count( $rows ) < OCTK_EXPORT_BATCH ) {
-			return;
-		}
-	}
-
-	octk_log( 'CSV export truncated at ' . ( OCTK_EXPORT_BATCH * OCTK_EXPORT_MAX_BATCHES ) . ' rows' );
-	/* translators: %d: maximum number of exported rows. */
-	octk_csv_row( $out, array( sprintf( __( '(export truncated at %d rows - narrow the filters)', 'hopcount-click-tracking' ), OCTK_EXPORT_BATCH * OCTK_EXPORT_MAX_BATCHES ) ) );
+	// 'label' is deliberately LAST: existing consumers' column positions must not shift.
+	octk_csv_row( $out, array(
+		'source_post_id',
+		'source_title',
+		'source_url',
+		'destination_host',
+		'destination_url',
+		'clicks',
+		'last_activity_utc',
+		'last_activity_site_tz',
+		'label',
+	) );
 }
 
 /**
